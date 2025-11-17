@@ -401,30 +401,28 @@
             }
 
             makePuff(x, y, z, size, dark, turbulence = 0) {
-                const geo = new THREE.SphereGeometry(size, 8, 8);
-                const scale = 1 + turbulence * 0.3;
+                const geo = new THREE.SphereGeometry(size, 12, 12);
                 
-                // More varied shapes for volumetric appearance
-                const scaleX = 0.9 + Math.random() * 0.4 + turbulence * 0.2;
-                const scaleY = 0.7 + Math.random() * 0.5 + turbulence * 0.3;
-                const scaleZ = 1.1 + Math.random() * 0.6 + turbulence * 0.3;
+                // Highly varied shapes for realistic cumulus appearance
+                const scaleX = 0.85 + Math.random() * 0.5 + turbulence * 0.15;
+                const scaleY = 0.8 + Math.random() * 0.7 + turbulence * 0.25;
+                const scaleZ = 0.9 + Math.random() * 0.6 + turbulence * 0.2;
                 geo.scale(scaleX, scaleY, scaleZ);
                 
-                const b = 0.88 - dark * 0.35 - turbulence * 0.1;
+                // Realistic cloud coloring - bright white tops, darker bases
+                const heightFactor = Math.max(0, (y - 12) / 25);
+                const topBrightness = 0.95 + heightFactor * 0.05;
+                const baseBrightness = 0.75 - dark * 0.4;
+                const b = baseBrightness + (topBrightness - baseBrightness) * heightFactor;
                 
-                // Create volumetric appearance with subsurface scattering effect
-                const mat = new THREE.MeshPhongMaterial({
-                    color: new THREE.Color(b, b, b + 0.03),
+                // Use Lambert for soft, realistic lighting
+                const mat = new THREE.MeshLambertMaterial({
+                    color: new THREE.Color(b, b, b + 0.02),
                     transparent: true,
-                    opacity: 0.25 + dark * 0.2 + turbulence * 0.08,
-                    depthWrite: false,
-                    fog: true,
-                    emissive: new THREE.Color(b * 0.3, b * 0.3, b * 0.35),
-                    emissiveIntensity: 0.15,
-                    shininess: 5,
-                    specular: new THREE.Color(0xffffff),
-                    flatShading: false
+                    opacity: 0.45 + dark * 0.25 + turbulence * 0.1,
+                    depthWrite: false
                 });
+                mat.fog = true;
 
                 const m = new THREE.Mesh(geo, mat);
                 m.position.set(x, y, z);
@@ -437,11 +435,16 @@
             grow(x, z) {
                 if (!this.isOverWater(x, z)) return null;
                 
+                // Variable width for different cloud types
+                const widthFactor = 0.7 + Math.random() * 0.6; // 0.7 to 1.3
+                
                 const c = {
                     x, z, age: 0, 
-                    maxAge: 300 + Math.random() * 200,
+                    maxAge: 400 + Math.random() * 300,
                     baseHeight: 12,
-                    height: 12, 
+                    height: 12,
+                    cloudTop: 12,
+                    cloudBase: 10,
                     puffs: [], 
                     grp: new THREE.Group(), 
                     dying: false,
@@ -453,8 +456,13 @@
                     velocity: { x: 0, z: 0 },
                     targetVelocity: { x: 0, z: 0 },
                     radius: 2,
+                    widthFactor: widthFactor,
+                    horizontalSpread: 1.0,
                     mergeTimer: 0,
-                    canMerge: true
+                    canMerge: true,
+                    verticalVelocity: 0,
+                    buoyancy: 0.5 + Math.random() * 0.5,
+                    stage: 'cumulus'
                 };
                 c.grp.position.set(x, 0, z);
                 this.group.add(c.grp);
@@ -463,41 +471,66 @@
 
             checkMerge(cloud1, cloud2) {
                 const dist = Math.sqrt((cloud1.x - cloud2.x) ** 2 + (cloud1.z - cloud2.z) ** 2);
-                const minDist = cloud1.radius + cloud2.radius;
+                const mergeRadius = (cloud1.radius * cloud1.horizontalSpread + cloud2.radius * cloud2.horizontalSpread) * 0.7;
                 
-                if (dist < minDist && cloud1.canMerge && cloud2.canMerge && cloud1.age > 50 && cloud2.age > 50) {
+                if (dist < mergeRadius && cloud1.canMerge && cloud2.canMerge && 
+                    cloud1.age > 50 && cloud2.age > 50 &&
+                    Math.abs(cloud1.height - cloud2.height) < 8) {
                     return true;
                 }
                 return false;
             }
 
             mergeClouds(cloud1, cloud2) {
-                // Transfer mass and puffs from cloud2 to cloud1
-                cloud1.mass += cloud2.mass * 0.8;
-                cloud1.radius = Math.sqrt(cloud1.radius ** 2 + cloud2.radius ** 2);
-                cloud1.maxAge += cloud2.maxAge * 0.3;
+                const totalMass = cloud1.mass + cloud2.mass;
+                
+                // Transfer mass and properties
+                cloud1.mass += cloud2.mass * 0.85;
+                
+                // Merge radii like 3D terrain - additive volume
+                const volume1 = Math.PI * cloud1.radius * cloud1.radius * cloud1.horizontalSpread;
+                const volume2 = Math.PI * cloud2.radius * cloud2.radius * cloud2.horizontalSpread;
+                const totalVolume = volume1 + volume2;
+                cloud1.radius = Math.sqrt(totalVolume / (Math.PI * cloud1.horizontalSpread)) * 0.9;
+                
+                // Average width factors
+                cloud1.widthFactor = (cloud1.widthFactor * cloud1.mass + cloud2.widthFactor * cloud2.mass) / totalMass;
+                cloud1.horizontalSpread = (cloud1.horizontalSpread + cloud2.horizontalSpread) / 2;
+                
+                cloud1.maxAge += cloud2.maxAge * 0.4;
                 cloud1.condensationLevel = Math.max(cloud1.condensationLevel, cloud2.condensationLevel);
                 
-                // Move to center of mass
-                const totalMass = cloud1.mass + cloud2.mass;
-                cloud1.x = (cloud1.x * cloud1.mass + cloud2.x * cloud2.mass) / totalMass;
-                cloud1.z = (cloud1.z * cloud1.mass + cloud2.z * cloud2.mass) / totalMass;
+                // Smooth position blend (like terrain heightmap merging)
+                const blendFactor = cloud2.mass / totalMass;
+                cloud1.x = cloud1.x * (1 - blendFactor) + cloud2.x * blendFactor;
+                cloud1.z = cloud1.z * (1 - blendFactor) + cloud2.z * blendFactor;
                 
-                // Transfer some puffs
-                const transferCount = Math.min(5, cloud2.puffs.length);
+                // Blend heights
+                cloud1.cloudTop = Math.max(cloud1.cloudTop, cloud2.cloudTop);
+                cloud1.cloudBase = Math.min(cloud1.cloudBase, cloud2.cloudBase);
+                cloud1.height = cloud1.cloudTop;
+                
+                // Transfer puffs in a blended manner
+                const transferCount = Math.min(8, cloud2.puffs.length);
                 for (let i = 0; i < transferCount; i++) {
                     if (cloud2.puffs[i]) {
-                        cloud1.puffs.push(cloud2.puffs[i]);
-                        cloud1.grp.add(cloud2.puffs[i]);
+                        const puff = cloud2.puffs[i];
+                        // Adjust puff position relative to new cloud center
+                        const offsetX = cloud2.x - cloud1.x;
+                        const offsetZ = cloud2.z - cloud1.z;
+                        puff.position.x -= offsetX;
+                        puff.position.z -= offsetZ;
+                        cloud1.puffs.push(puff);
+                        cloud1.grp.add(puff);
                     }
                 }
                 
-                // Mark cloud2 for removal
+                // Mark for removal
                 cloud2.dying = true;
                 cloud2.maxAge = cloud2.age + 10;
                 
-                // Prevent immediate re-merge
-                cloud1.mergeTimer = 100;
+                // Cooldown
+                cloud1.mergeTimer = 150;
                 cloud1.canMerge = false;
             }
 
@@ -595,7 +628,7 @@
                         c.z += Math.cos(t * 0.0002 + c.age * 0.01) * 0.02;
                     }
                     
-                    // Enhanced cloud growth system
+                    // Enhanced cloud growth system with realistic vertical development
                     const updraftLift = this.getUpdraftAt(c.x, c.z);
                     
                     // Progressive mass accumulation based on condensation
@@ -604,19 +637,75 @@
                     c.turbulence = updraftLift * 0.5;
                     c.radius = 2 + c.mass * 0.8;
                     
-                    // Multi-stage growth
-                    let growthStage = 'developing';
-                    if (c.age > 150 && c.mass > 3) growthStage = 'mature';
-                    if (c.age > c.maxAge * 0.7) growthStage = 'dissipating';
+                    // Dynamic horizontal spread based on stage
+                    if (c.stage === 'cumulus') {
+                        c.horizontalSpread = 0.9 + c.widthFactor * 0.3;
+                    } else if (c.stage === 'towering_cumulus') {
+                        c.horizontalSpread = 0.8 + c.widthFactor * 0.2; // Narrower
+                    } else if (c.stage === 'cumulonimbus') {
+                        c.horizontalSpread = 1.2 + c.widthFactor * 0.4; // Wide anvil
+                    }
                     
-                    // Enhanced growth rate with stages
+                    // Realistic vertical cloud development
+                    const temperature = 1 - (c.height / 40);
+                    const moisture = c.condensationLevel;
+                    
+                    // Buoyancy-driven rise
+                    c.buoyancy = (temperature * moisture * 0.8 + updraftLift * 1.5) * (1 - c.age / c.maxAge);
+                    c.verticalVelocity += c.buoyancy * 0.02;
+                    c.verticalVelocity *= 0.96;
+                    
+                    // Cloud rises
+                    c.cloudTop += c.verticalVelocity;
+                    c.height = c.cloudTop;
+                    
+                    // Base rises more slowly
+                    if (c.age > 50) {
+                        c.cloudBase += c.verticalVelocity * 0.3;
+                    }
+                    
+                    // Determine cloud stage and growth stage
+                    let growthStage = 'developing';
+                    
+                    if (c.cloudTop < 20) {
+                        c.stage = 'cumulus';
+                        growthStage = 'developing';
+                    } else if (c.cloudTop < 30 && c.mass > 2) {
+                        c.stage = 'towering_cumulus';
+                        growthStage = 'mature';
+                    } else if (c.cloudTop >= 30 && c.mass > 4) {
+                        c.stage = 'cumulonimbus';
+                        growthStage = 'mature';
+                    }
+                    
+                    if (c.age > c.maxAge * 0.7) {
+                        growthStage = 'dissipating';
+                        c.stage = 'dissipating';
+                    }
+                    
+                    // Multi-stage growth based on cloud type
                     let effectiveGrowthRate = c.growthRate;
-                    if (growthStage === 'developing') {
+                    if (c.stage === 'cumulus') {
                         effectiveGrowthRate *= (1 + updraftLift * 3);
-                    } else if (growthStage === 'mature') {
+                    } else if (c.stage === 'towering_cumulus') {
+                        effectiveGrowthRate *= (1 + updraftLift * 2);
+                    } else if (c.stage === 'cumulonimbus') {
                         effectiveGrowthRate *= (1 + updraftLift * 1.5);
-                    } else {
-                        effectiveGrowthRate *= 0.5;
+                        if (c.puffs.length % 20 === 0) {
+                            const anvilPuff = this.makePuff(
+                                (Math.random() - 0.5) * (c.radius + 5),
+                                c.cloudTop + 2,
+                                (Math.random() - 0.5) * (c.radius + 5),
+                                2 + Math.random() * 3,
+                                0.2,
+                                0
+                            );
+                            c.puffs.push(anvilPuff);
+                            c.grp.add(anvilPuff);
+                        }
+                    } else if (c.stage === 'dissipating') {
+                        effectiveGrowthRate *= 0.3;
+                        c.verticalVelocity *= 0.9;
                     }
                     
                     if (c.age < c.maxAge * 0.75) {
@@ -631,24 +720,27 @@
                             
                             for (let p = 0; p < puffCount; p++) {
                                 const a = Math.random() * Math.PI * 2;
-                                const d = c.puffs.length * 0.35 + Math.random() * 2;
+                                const d = Math.sqrt(c.puffs.length) * 0.6 + Math.random() * 1.5;
                                 
                                 // Height affected by updraft and stage
                                 const baseH = c.height + c.age * effectiveGrowthRate;
                                 const h = baseH + updraftLift * 5 + (growthStage === 'mature' ? 2 : 0);
                                 
-                                const dark = Math.min(0.8, (c.age / 180) + c.condensationLevel * 0.4 + (growthStage === 'mature' ? 0.1 : 0));
+                                const dark = Math.min(0.65, (c.age / 200) + c.condensationLevel * 0.3 + (growthStage === 'mature' ? 0.15 : 0));
                                 
-                                // Create multiple overlapping puffs for volumetric depth
-                                const layerCount = (dark > 0.5 || growthStage === 'mature') ? 2 : 1;
+                                // Create dense, overlapping structure like real cumulus
+                                const layerCount = (growthStage === 'mature' || dark > 0.4) ? 3 : 2;
                                 for (let layer = 0; layer < layerCount; layer++) {
-                                    const layerOffset = layer * 0.5;
+                                    const angleOffset = (layer * Math.PI * 2) / layerCount;
+                                    const radiusOffset = layer * 0.4;
+                                    const heightOffset = layer * 0.6 - 0.3;
+                                    
                                     const puff = this.makePuff(
-                                        Math.cos(a) * d + layerOffset, 
-                                        h + layerOffset * 0.3, 
-                                        Math.sin(a) * d + layerOffset, 
-                                        1.4 + Math.random() * 2.2 + updraftLift * 0.9 + (growthStage === 'mature' ? 0.5 : 0), 
-                                        dark + layer * 0.1,
+                                        Math.cos(a + angleOffset) * (d + radiusOffset), 
+                                        h + heightOffset, 
+                                        Math.sin(a + angleOffset) * (d + radiusOffset), 
+                                        1.8 + Math.random() * 2.8 + updraftLift * 1.2 + (growthStage === 'mature' ? 0.8 : 0), 
+                                        dark + layer * 0.08,
                                         c.turbulence
                                     );
                                     c.puffs.push(puff);
@@ -700,7 +792,7 @@
             }
 
             getMature() {
-                return this.clouds.filter(c => c.age > 80 && c.age < c.maxAge * 0.9 && c.mass > 1.5);
+                return this.clouds.filter(c => (c.stage === 'cumulonimbus' || c.stage === 'towering_cumulus') && !c.dying && c.mass > 3);
             }
         }
 
@@ -711,30 +803,35 @@
                 this.max = 3000;
                 this.drops = [];
                 this.vel = [];
-                this.streaks = [];
+                this.types = [];
                 
                 const geo = new THREE.BufferGeometry();
                 this.pos = new Float32Array(this.max * 3);
                 this.sizes = new Float32Array(this.max);
+                this.colors = new Float32Array(this.max * 3);
                 
                 for (let i = 0; i < this.max; i++) {
                     this.drops.push({ active: false });
                     this.vel.push({ y: 0, size: 0 });
+                    this.types.push('rain');
                     this.pos[i * 3] = 0;
                     this.pos[i * 3 + 1] = -1000;
                     this.pos[i * 3 + 2] = 0;
                     this.sizes[i] = 0;
+                    this.colors[i * 3] = 1;
+                    this.colors[i * 3 + 1] = 1;
+                    this.colors[i * 3 + 2] = 1;
                 }
 
                 geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
                 geo.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+                geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
                 
                 const canvas = document.createElement('canvas');
                 canvas.width = 8;
                 canvas.height = 32;
                 const ctx = canvas.getContext('2d');
                 
-                // Vertical streak gradient
                 const grad = ctx.createLinearGradient(0, 0, 0, 32);
                 grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
                 grad.addColorStop(0.3, 'rgba(220, 240, 255, 0.9)');
@@ -744,20 +841,19 @@
                 ctx.fillRect(0, 0, 8, 32);
                 
                 const mat = new THREE.PointsMaterial({
-                    color: 0xffffff,
                     size: 0.6,
                     transparent: true,
                     opacity: 0.95,
                     map: new THREE.CanvasTexture(canvas),
                     depthWrite: false,
                     sizeAttenuation: true,
-                    blending: THREE.AdditiveBlending
+                    blending: THREE.AdditiveBlending,
+                    vertexColors: true
                 });
 
                 this.rain = new THREE.Points(geo, mat);
                 AppState.scene.add(this.rain);
                 
-                // Rain streak lines for heavy rain effect
                 this.createStreakSystem();
             }
 
@@ -777,6 +873,30 @@
                 AppState.scene.add(this.streakLines);
             }
 
+            getTemperature(altitude) {
+                // Standard atmosphere: ~15°C at sea level, decreases ~6.5°C per km
+                const seaLevelTemp = 15;
+                const lapseRate = 6.5;
+                return seaLevelTemp - (altitude / 1000) * lapseRate;
+            }
+
+            determinePrecipType(temperature, altitude) {
+                // Complex precipitation type determination
+                if (temperature < -5) {
+                    // Snow
+                    return 'snow';
+                } else if (temperature < 0 && altitude > 15) {
+                    // Ice pellets/sleet
+                    return 'sleet';
+                } else if (temperature < 2 && Math.random() < 0.3) {
+                    // Freezing rain
+                    return 'freezing_rain';
+                } else {
+                    // Rain
+                    return 'rain';
+                }
+            }
+
             spawn(cx, cz, h) {
                 for (let i = 0; i < this.max; i++) {
                     if (!this.drops[i].active) {
@@ -785,9 +905,36 @@
                         this.pos[idx + 1] = h;
                         this.pos[idx + 2] = cz + (Math.random() - 0.5) * 14;
                         
-                        const s = 0.6 + Math.random() * 2.8;
-                        this.vel[i] = { y: 0.35 + (s / 3) * 0.7, size: s };
+                        const temp = this.getTemperature(h);
+                        const precipType = this.determinePrecipType(temp, h);
+                        this.types[i] = precipType;
+                        
+                        // Set properties based on type
+                        let s, fallSpeed, color;
+                        
+                        if (precipType === 'snow') {
+                            s = 1.2 + Math.random() * 2.0;
+                            fallSpeed = 0.15 + (s / 4) * 0.2;
+                            color = { r: 1.0, g: 1.0, b: 1.0 };
+                        } else if (precipType === 'sleet') {
+                            s = 0.8 + Math.random() * 1.2;
+                            fallSpeed = 0.25 + (s / 3) * 0.4;
+                            color = { r: 0.9, g: 0.95, b: 1.0 };
+                        } else if (precipType === 'freezing_rain') {
+                            s = 0.7 + Math.random() * 2.0;
+                            fallSpeed = 0.3 + (s / 3) * 0.5;
+                            color = { r: 0.8, g: 0.9, b: 1.0 };
+                        } else {
+                            s = 0.6 + Math.random() * 2.8;
+                            fallSpeed = 0.35 + (s / 3) * 0.7;
+                            color = { r: 0.9, g: 0.95, b: 1.0 };
+                        }
+                        
+                        this.vel[i] = { y: fallSpeed, size: s };
                         this.sizes[i] = s * 0.2;
+                        this.colors[idx] = color.r;
+                        this.colors[idx + 1] = color.g;
+                        this.colors[idx + 2] = color.b;
                         this.drops[i] = { active: true };
                         break;
                     }
@@ -797,7 +944,6 @@
             update() {
                 const mature = this.cloudSystemRef.getMature();
                 
-                // Spawn from all mature clouds
                 if (mature.length > 0) {
                     mature.forEach(c => {
                         const dropCount = 12 + Math.floor(Math.random() * 8);
@@ -815,15 +961,38 @@
                     if (!this.drops[i].active) continue;
                     
                     const idx = i * 3;
-                    const w = this.windFieldRef.getAt(this.pos[idx], this.pos[idx + 1], this.pos[idx + 2]);
+                    const altitude = this.pos[idx + 1];
+                    const w = this.windFieldRef.getAt(this.pos[idx], altitude, this.pos[idx + 2]);
                     
-                    const oldY = this.pos[idx + 1];
+                    const oldY = altitude;
+                    
+                    // Wind effect varies by precipitation type
+                    let windResistance = 1.0;
+                    if (this.types[i] === 'snow') {
+                        windResistance = 3.0; // Snow drifts more
+                    } else if (this.types[i] === 'sleet') {
+                        windResistance = 1.5;
+                    }
+                    
                     this.pos[idx + 1] -= this.vel[i].y;
-                    this.pos[idx] += w.x * (1 / this.vel[i].size);
-                    this.pos[idx + 2] += w.z * (1 / this.vel[i].size);
+                    this.pos[idx] += w.x * windResistance * (1 / this.vel[i].size);
+                    this.pos[idx + 2] += w.z * windResistance * (1 / this.vel[i].size);
+                    
+                    // Temperature changes as it falls
+                    const currentTemp = this.getTemperature(altitude);
+                    
+                    // Phase transitions
+                    if (this.types[i] === 'snow' && currentTemp > 2 && altitude < 10) {
+                        // Snow melting to rain
+                        this.types[i] = 'rain';
+                        this.vel[i].y = 0.35 + (this.vel[i].size / 3) * 0.7;
+                        this.colors[idx] = 0.9;
+                        this.colors[idx + 1] = 0.95;
+                        this.colors[idx + 2] = 1.0;
+                    }
                     
                     // Create streak lines for fast drops
-                    if (streakIdx < 200 && this.vel[i].y > 0.5 && Math.random() < 0.15) {
+                    if (streakIdx < 200 && this.vel[i].y > 0.5 && Math.random() < 0.15 && this.types[i] !== 'snow') {
                         const si = streakIdx * 6;
                         streakPos[si] = this.pos[idx];
                         streakPos[si + 1] = oldY;
@@ -845,13 +1014,13 @@
                     }
                 }
                 
-                // Clear remaining streak positions
                 for (let i = streakIdx * 6; i < 200 * 6; i++) {
                     streakPos[i] = 0;
                 }
                 
                 this.rain.geometry.attributes.position.needsUpdate = true;
                 this.rain.geometry.attributes.size.needsUpdate = true;
+                this.rain.geometry.attributes.color.needsUpdate = true;
                 this.streakGeometry.attributes.position.needsUpdate = true;
                 return active;
             }
@@ -1202,49 +1371,11 @@
             const activePart = AppState.rainSystem.update();
             AppState.lightningSystem.update(t);
 
-            // Update camera shake
-            const shake = AppState.cameraControls.shake;
-            
-            if (shake.intensity > 0.01) {
-                // Multi-frequency layered shake for realism
-                const time = t * 0.001;
-                const highFreq = Math.sin(time * 50) * Math.cos(time * 47);
-                const midFreq = Math.sin(time * 20) * Math.cos(time * 23);
-                const lowFreq = Math.sin(time * 8) * Math.cos(time * 9);
-                
-                const intensity = shake.intensity;
-                shake.x = (Math.random() - 0.5) * intensity * 1.5 + highFreq * intensity * 0.3 + midFreq * intensity * 0.2;
-                shake.y = (Math.random() - 0.5) * intensity + midFreq * intensity * 0.3 + lowFreq * intensity * 0.2;
-                shake.z = (Math.random() - 0.5) * intensity * 1.5 + highFreq * intensity * 0.25 + lowFreq * intensity * 0.25;
-                
-                // Faster decay for more responsive feel
-                shake.intensity *= 0.88;
-                
-                // Add aftershock rumble
-                if (shake.intensity < 0.4 && shake.intensity > 0.05) {
-                    shake.x += Math.sin(time * 15) * 0.08;
-                    shake.y += Math.cos(time * 12) * 0.05;
-                    shake.z += Math.sin(time * 18) * 0.08;
-                }
-            } else {
-                // Smooth stop
-                shake.x *= 0.75;
-                shake.y *= 0.75;
-                shake.z *= 0.75;
-                if (Math.abs(shake.x) < 0.001) shake.x = 0;
-                if (Math.abs(shake.y) < 0.001) shake.y = 0;
-                if (Math.abs(shake.z) < 0.001) shake.z = 0;
-            }
-
             const ctrl = AppState.cameraControls;
-            const baseX = ctrl.distance * Math.sin(ctrl.rotation.theta) * Math.cos(ctrl.rotation.phi);
-            const baseY = ctrl.distance * Math.sin(ctrl.rotation.phi);
-            const baseZ = ctrl.distance * Math.cos(ctrl.rotation.theta) * Math.cos(ctrl.rotation.phi);
-            
-            AppState.camera.position.x = baseX + ctrl.shake.x;
-            AppState.camera.position.y = baseY + ctrl.shake.y;
-            AppState.camera.position.z = baseZ + ctrl.shake.z;
-            AppState.camera.lookAt(ctrl.shake.x * 0.5, 20 + ctrl.shake.y * 0.5, ctrl.shake.z * 0.5);
+            AppState.camera.position.x = ctrl.distance * Math.sin(ctrl.rotation.theta) * Math.cos(ctrl.rotation.phi);
+            AppState.camera.position.y = ctrl.distance * Math.sin(ctrl.rotation.phi);
+            AppState.camera.position.z = ctrl.distance * Math.cos(ctrl.rotation.theta) * Math.cos(ctrl.rotation.phi);
+            AppState.camera.lookAt(0, 20, 0);
 
             AppState.renderer.render(AppState.scene, AppState.camera);
 
@@ -1265,4 +1396,4 @@
         animate();
     </script>
 </body>
-    </html>
+</html>
