@@ -218,6 +218,7 @@
         <button id="toggle-gui">👁️ Hide UI</button>
         <button id="pause-btn">⏸ Pause</button>
         <button id="reset-btn" style="background: rgba(0,0,0,0.75); color:white; border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:10px; cursor:pointer; font-family:'Courier New', monospace; font-size:13px; backdrop-filter: blur(6px);">🔄 Reset</button>
+        <button id="fp-toggle" style="background: rgba(0,0,0,0.75); color:white; border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:10px; cursor:pointer; font-family:'Courier New', monospace; font-size:13px; backdrop-filter: blur(6px);">FP Mode</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -681,7 +682,8 @@
                     turbulence: 0,
                     velocity: { x: 0, z: 0 },
                     targetVelocity: { x: 0, z: 0 },
-                    radius: 2,
+                    // start with a larger base radius so new clouds form with broader structure
+                    radius: 3 + Math.random() * 1.8,
                     widthFactor: widthFactor,
                     horizontalSpread: 1.2,
                     mergeTimer: 0,
@@ -960,10 +962,13 @@
                                     const radiusOffset = layer * 0.4;
                                     const heightOffset = layer * 0.6 - 0.3;
                                     
+                                    // place puffs using the cloud's current radius and widthFactor so new clouds are broader
+                                    const spread = (c.radius * Math.max(1.0, c.widthFactor)) * (0.45 + Math.random() * 0.9);
+                                    const radial = spread * (0.6 + Math.random() * 0.6) + radiusOffset + (Math.sqrt(c.puffs.length) * 0.15);
                                     const puff = this.makePuff(
-                                        Math.cos(a + angleOffset) * (d + radiusOffset), 
-                                        h + heightOffset, 
-                                        Math.sin(a + angleOffset) * (d + radiusOffset), 
+                                        Math.cos(a + angleOffset) * radial,
+                                        h + heightOffset,
+                                        Math.sin(a + angleOffset) * radial,
                                         1.8 + Math.random() * 2.8 + updraftLift * 1.2 + (growthStage === 'mature' ? 0.8 : 0), 
                                         dark + layer * 0.08,
                                         c.turbulence
@@ -1222,19 +1227,23 @@
 
                         if (precipType === 'snow') {
                             s = (1.2 + Math.random() * 2.0) * sizeMult;
-                            fallSpeed = 0.12 + (s / 4) * 0.12 * Math.min(1.4, heightFactor);
+                            // faster fall for snows (multiplied)
+                            fallSpeed = (0.12 + (s / 4) * 0.12 * Math.min(1.4, heightFactor)) * 1.8;
                             color = { r: 1.0, g: 1.0, b: 1.0 };
                         } else if (precipType === 'sleet') {
                             s = (0.8 + Math.random() * 1.2) * sizeMult;
-                            fallSpeed = 0.2 + (s / 3) * 0.35 * Math.min(1.4, heightFactor);
+                            // faster fall for sleet
+                            fallSpeed = (0.2 + (s / 3) * 0.35 * Math.min(1.4, heightFactor)) * 1.9;
                             color = { r: 0.9, g: 0.95, b: 1.0 };
                         } else if (precipType === 'freezing_rain') {
                             s = (0.7 + Math.random() * 2.0) * sizeMult;
-                            fallSpeed = 0.25 + (s / 3) * 0.45 * Math.min(1.4, heightFactor);
+                            // faster fall for freezing rain
+                            fallSpeed = (0.25 + (s / 3) * 0.45 * Math.min(1.4, heightFactor)) * 2.0;
                             color = { r: 0.8, g: 0.9, b: 1.0 };
                         } else {
                             s = (0.6 + Math.random() * 2.8) * sizeMult;
-                            fallSpeed = 0.3 + (s / 3) * 0.6 * Math.min(1.6, heightFactor);
+                            // faster fall for rain (primary speed increase)
+                            fallSpeed = (0.3 + (s / 3) * 0.6 * Math.min(1.6, heightFactor)) * 2.2;
                             color = { r: 0.9, g: 0.95, b: 1.0 };
                         }
                         
@@ -1319,6 +1328,8 @@
                                     pPos[pi*3+2] = 0;
                                 }
                                 pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+                                // define baseCol used for shaft material (was undefined)
+                                const baseCol = new THREE.Color(0xaaccff);
                                 const pMat = new THREE.PointsMaterial({
                                     size: 0.28,
                                     color: baseCol,
@@ -1355,6 +1366,8 @@
                                 let ring = this._ringPool[this._nextRing++];
                                 if (!ring) {
                                     const ringGeo = new THREE.RingGeometry(1, 1.4, 28);
+                                    // ensure baseCol is defined in this scope
+                                    const baseCol = new THREE.Color(0xaaccff);
                                     const ringMat = new THREE.MeshBasicMaterial({ color: baseCol, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
                                     ring = new THREE.Mesh(ringGeo, ringMat);
                                     ring.rotation.x = -Math.PI / 2;
@@ -1951,17 +1964,23 @@
 
         function setupControls() {
             // Mouse controls
-            AppState.renderer.domElement.addEventListener('mousedown', e => {
+            // Use Pointer Events for consistent mouse & touch drag handling on the renderer canvas
+            const canvas = AppState.renderer.domElement;
+            canvas.style.touchAction = 'none'; // prevent browser gestures interfering
+
+            canvas.addEventListener('pointerdown', (e) => {
+                // only handle primary button
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
                 AppState.cameraControls.isDrag = true;
                 AppState.cameraControls.prevMouse = { x: e.clientX, y: e.clientY };
-                // enable pointer lock suggestion for FP mode on click (optional)
+                // optional pointer lock suggestion when in FP mode
                 if (AppState.firstPerson && document.body.requestPointerLock) {
-                    try { document.body.requestPointerLock(); } catch(e){}
+                    try { document.body.requestPointerLock(); } catch (err) {}
                 }
             });
 
-            // Single canonical mousemove drag handler (orbit)
-            AppState.renderer.domElement.addEventListener('mousemove', e => {
+            canvas.addEventListener('pointermove', (e) => {
                 if (!AppState.cameraControls.isDrag) return;
                 const dx = e.clientX - AppState.cameraControls.prevMouse.x;
                 const dy = e.clientY - AppState.cameraControls.prevMouse.y;
@@ -1971,9 +1990,14 @@
                 AppState.cameraControls.prevMouse = { x: e.clientX, y: e.clientY };
             });
 
-            AppState.renderer.domElement.addEventListener('mouseup', () => {
+            canvas.addEventListener('pointerup', (e) => {
+                canvas.releasePointerCapture && canvas.releasePointerCapture(e.pointerId);
                 AppState.cameraControls.isDrag = false;
-                if (document.exitPointerLock) try { document.exitPointerLock(); } catch(e){}
+                if (document.exitPointerLock) try { document.exitPointerLock(); } catch (err) {}
+            });
+            canvas.addEventListener('pointercancel', (e) => {
+                canvas.releasePointerCapture && canvas.releasePointerCapture(e.pointerId);
+                AppState.cameraControls.isDrag = false;
             });
 
             // Touch controls (orbit/look handled via joystick below)
@@ -2109,6 +2133,78 @@
             AppState.rainSystem = new Precipitation(AppState.windField, AppState.cloudSystem);
             AppState.lightningSystem = new Lightning(AppState.cloudSystem);
             AppState.downburstSystem = new Downburst(AppState.windField, AppState.cloudSystem);
+            AppState.updraftSystem = new (class UpdraftSystem {
+                constructor(windFieldRef, cloudSystemRef) {
+                    this.wind = windFieldRef;
+                    this.clouds = cloudSystemRef;
+                    this.events = []; // transient concentrated updraft pulses
+                }
+                // return net updraft lift at x,z (0..1 scale)
+                getUpdraftAt(x, z) {
+                    // base lift from cloud updraft objects (cloudSystem maintains updrafts)
+                    let lift = 0;
+                    if (this.clouds && this.clouds.updrafts) {
+                        for (const u of this.clouds.updrafts) {
+                            if (!u || !u.active) continue;
+                            const dist = Math.hypot(x - u.x, z - u.z);
+                            if (dist < u.radius) {
+                                const f = 1 - dist / u.radius;
+                                lift += u.strength * f * Math.min(1, u.age / Math.max(1, u.maxAge));
+                            }
+                        }
+                    }
+                    // transient event pulses (localized stronger updrafts)
+                    for (let i = this.events.length - 1; i >= 0; i--) {
+                        const ev = this.events[i];
+                        const d = Math.hypot(x - ev.x, z - ev.z);
+                        if (d < ev.radius) {
+                            const f2 = 1 - d / ev.radius;
+                            lift += ev.strength * f2 * (ev.life / ev.maxLife);
+                        }
+                        ev.life--;
+                        if (ev.life <= 0) this.events.splice(i, 1);
+                    }
+                    return Math.min(2.0, lift); // allow >1 for strong updrafts but clamp
+                }
+                // spawn a transient pulse (used by cloud collapse or manual triggers)
+                trigger(x, z, strength = 1.2, radius = 12, duration = 60) {
+                    this.events.push({ x, z, strength, radius, life: duration, maxLife: duration });
+                }
+                update() {
+                    // gently nudge low-level wind field to simulate organized updraft columns
+                    // small inexpensive pass to add vertical hint into wind cells
+                    if (!this.wind || !this.wind.field) return;
+                    const now = performance.now();
+                    const size = this.wind.size;
+                    const spacing = this.wind.spacing;
+                    for (let gx = 0; gx < size; gx++) {
+                        for (let gz = 0; gz < size; gz++) {
+                            // sample world position of cell center
+                            const wx = (gx - size / 2) * spacing;
+                            const wz = (gz - size / 2) * spacing;
+                            const up = this.getUpdraftAt(wx, wz);
+                            if (up > 0.001) {
+                                // apply a small upward proxy stored on the cell for other systems to read
+                                for (let gy = 0; gy < Math.min(6, size); gy++) {
+                                    const cell = this.wind.field[gx][gy][gz];
+                                    cell.__updraft = (cell.__updraft || 0) + up * 0.002 * (1 + (6 - gy) * 0.08);
+                                }
+                            }
+                        }
+                    }
+                    // decay __updraft markers over time
+                    for (let gx = 0; gx < this.wind.size; gx++) {
+                        for (let gy = 0; gy < Math.min(6, this.wind.size); gy++) {
+                            for (let gz = 0; gz < this.wind.size; gz++) {
+                                const c = this.wind.field[gx][gy][gz];
+                                if (c && c.__updraft) {
+                                    c.__updraft *= 0.92;
+                                }
+                            }
+                        }
+                    }
+                }
+            })(AppState.windField, AppState.cloudSystem);
             
             setupControls();
             // detect CPU & GPU and display
