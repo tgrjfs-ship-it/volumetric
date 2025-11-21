@@ -158,11 +158,13 @@
     <div id="stats" class="ui-panel">
         <div class="title">⚡ Storm Dynamics</div>
         <div>FPS: <span class="stat-value" id="fps">0</span></div>
+        <div>Frame Time: <span class="stat-value" id="frame-time">0</span>ms</div>
         <div>Raindrops: <span class="stat-value" id="particles">0</span></div>
         <div>Clouds: <span class="stat-value" id="clouds">0</span></div>
         <div>Charge: <span class="stat-value" id="charge">0</span>%</div>
         <div>Strikes: <span class="stat-value" id="strikes">0</span></div>
         <div>Wind: <span class="stat-value" id="wind">0</span> m/s</div>
+        <div>Time: <span class="stat-value" id="time-display">00:00</span></div>
         <div>CPU Cores: <span class="stat-value" id="cpu">—</span></div>
         <div>GPU: <span class="stat-value" id="gpu">—</span></div>
         <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 11px; color: #aaa;">
@@ -668,6 +670,8 @@
             _createInstancedShaftForCloud(cloud, intensity) {
                 // Create a complex 3D funnel/shaft with segmented cylindrical meshes
                 const segments = 12;
+                // scale shaft radius to cloud footprint so downfall sheet matches precipitation area
+                const shaftRadius = Math.max(3.6, (cloud.radius || 6) * (cloud.horizontalSpread || 1.0) * 1.12);
                 const baseRadius = Math.max(2.8, (cloud.radius || 6) * 0.9);
                 const topRadius = baseRadius * 0.22;
                 const height = Math.max(8, (cloud.height || 12) - 0.5);
@@ -679,8 +683,9 @@
                 
                 for (let seg = 0; seg < segmentCount; seg++) {
                     const ratio = seg / segmentCount;
-                    const currentRadius = baseRadius * (1 - ratio * 0.78);
-                    const nextRadius = baseRadius * (1 - (seg + 1) / segmentCount * 0.78);
+                    // taper relative to computed shaftRadius for consistent scale
+                    const currentRadius = shaftRadius * (1 - ratio * 0.6);
+                    const nextRadius = shaftRadius * (1 - (seg + 1) / segmentCount * 0.6);
                     
                     // Create tapered cylinder for this segment
                     const geo = new THREE.CylinderGeometry(nextRadius, currentRadius, segmentHeight, segments, 1, true);
@@ -689,13 +694,13 @@
                     const mat = new THREE.MeshStandardMaterial({
                         color: new THREE.Color(0x88c2ff),
                         transparent: true,
-                        opacity: Math.max(0.08, (0.35 - ratio * 0.28) * intensity) * (cloud.dying ? 0.6 : 1.0),
-                        metalness: 0.1,
+                        opacity: Math.max(0.06, (0.28 - ratio * 0.22) * intensity) * (cloud.dying ? 0.6 : 1.0),
+                        metalness: 0.05,
                         roughness: 0.9,
                         side: THREE.DoubleSide,
                         depthWrite: false,
-                        emissive: new THREE.Color(0x4488cc),
-                        emissiveIntensity: 0.12 * intensity
+                        emissive: new THREE.Color(0x3388bb),
+                        emissiveIntensity: 0.08 * intensity
                     });
                     
                     const mesh = new THREE.Mesh(geo, mat);
@@ -705,15 +710,20 @@
                     shaftGroup.add(mesh);
                 }
                 
+                // position and bookkeeping
                 shaftGroup.position.set(cloud.x, 0, cloud.z);
                 shaftGroup.userData = {
                     cloudRef: cloud,
+                    shaftRadius,
                     baseRadius,
                     topRadius,
                     height,
-                    intensity
+                    intensity,
+                    pcnt: Math.max(120, Math.floor(shaftRadius * 8)) // particle count proxy for update loops
                 };
                 
+                // ensure shafts aren't culled when near frustum edges (keeps visual consistent)
+                shaftGroup.frustumCulled = false;
                 return shaftGroup;
             }
 
@@ -813,6 +823,10 @@
                 m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
                 m.castShadow = true;
                 m.receiveShadow = true;
+                
+                // Add density property to puff mesh userData for precipitation physics
+                m.userData.density = Math.min(1.0, baseOpacity * 1.5);
+                
                 return m;
             }
 
@@ -1366,6 +1380,45 @@
                     return isConvective && hasMass && (condensationOk || !c.dying) && notTooOld;
                 });
             }
+
+            // New: Sample puff density near a world position (x, y, z)
+            getPuffDensityAt(wx, wy, wz) {
+                let densitySum = 0;
+                let weightSum = 0;
+
+                for (const c of this.clouds) {
+                    if (!c || !c.grp) continue;
+                    
+                    // Check cloud bounding box quickly
+                    const cloudRadius = c.radius * c.horizontalSpread;
+                    if (Math.abs(wx - c.x) > cloudRadius * 1.5 || Math.abs(wz - c.z) > cloudRadius * 1.5) continue;
+                    
+                    for (const puff of c.puffs) {
+                        if (!puff || !puff.userData || !puff.userData.density) continue;
+                        
+                        const puffPos = puff.position; // local to c.grp
+                        const px = puffPos.x + c.x;
+                        const py = puffPos.y;
+                        const pz = puffPos.z + c.z;
+                        
+                        // Puff radius approximation based on scale/size
+                        const size = (puff.scale.x + puff.scale.y + puff.scale.z) / 3 * 0.5;
+                        
+                        const distSq = (wx - px)**2 + (wy - py)**2 + (wz - pz)**2;
+                        const effectiveRadiusSq = (size * 1.5)**2;
+
+                        if (distSq < effectiveRadiusSq) {
+                            const dist = Math.sqrt(distSq);
+                            const influence = 1 - dist / (size * 1.5);
+                            
+                            densitySum += puff.userData.density * influence;
+                            weightSum += influence;
+                        }
+                    }
+                }
+                
+                return weightSum > 0.01 ? densitySum / weightSum : 0;
+            }
         }
 
         class Precipitation {
@@ -1453,6 +1506,52 @@
                 this.streakMaterial = new THREE.LineBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.36 });
                 this.streakLines = new THREE.LineSegments(this.streakGeometry, this.streakMaterial);
                 AppState.scene.add(this.streakLines);
+            }
+
+            // NEW: Function to dynamically update shaft visuals
+            _updateShaftVisuals(shaft, cloud, intensity, heightFactor, turbFactor) {
+                if (!shaft || !shaft.geometry || !shaft.material || !shaft.userData) return;
+                
+                const currentHeight = cloud.cloudTop || 18;
+                const cloudBase = cloud.cloudBase || 8;
+                
+                // Adjust opacity based on intensity and cloud properties
+                const targetOpacity = Math.min(0.55, 0.08 + intensity * 0.35) * (cloud.dying ? 0.55 : 1.0);
+                shaft.material.opacity += (targetOpacity - shaft.material.opacity) * 0.1;
+                
+                // Animate points within the shaft (simulating falling motion)
+                const posAttr = shaft.geometry.attributes.position;
+                const pPos = posAttr.array;
+                const count = shaft.userData.pcnt || pPos.length / 3;
+                const shaftRadius = shaft.userData.shaftRadius || 8;
+                
+                // simulate falling effect by moving points vertically and resetting them at top
+                for (let pi = 0; pi < count; pi++) {
+                    const idx = pi * 3;
+                    let y = pPos[idx + 1];
+                    // normalize position between ground (0) and cloud base (baseHeight)
+                    const frac = (y - 0) / (currentHeight - 0); // Use full height for fraction
+                    
+                    // faster fall speed for higher intensity (stronger rain)
+                    const fallSpeed = 0.6 + intensity * 0.4;
+                    y -= fallSpeed * 0.04 * (0.8 + frac * 0.2);
+                    
+                    // wrap around to the top base
+                    if (y < 0.8) {
+                        y = currentHeight + (Math.random() * 2) - 1; // start above cloud base
+                        // re-randomize horizontal position slightly for sheet variance
+                        const angle = (pi * 2.37 + Math.random() * 0.8) % (Math.PI * 2);
+                        const radius = (Math.random() * 0.9 + 0.1) * shaftRadius * (0.4 + 0.6 * (1 - Math.abs(0.5 - frac)));
+                        pPos[idx] = Math.cos(angle) * radius + (Math.random() - 0.5) * 0.02;
+                        pPos[idx + 2] = Math.sin(angle) * radius + (Math.random() - 0.5) * 0.02;
+                    }
+                    pPos[idx + 1] = y;
+                }
+                posAttr.needsUpdate = true;
+                
+                // Update container position (should follow cloud)
+                shaft.position.x += (cloud.x - shaft.position.x) * 0.1;
+                shaft.position.z += (cloud.z - shaft.position.z) * 0.1;
             }
 
             resize(newMax) {
@@ -1619,7 +1718,8 @@
                 const pPos = new Float32Array(pcnt * 3);
 
                 const baseHeight = Math.max(1.2, (cloud.height || 12) - 0.3);
-                const shaftRadius = Math.max(3.6, (cloud.radius || 6) * 0.9);
+                // compute a shaft radius that matches the cloud precipitation footprint
+                const shaftRadius = Math.max(3.6, (cloud.radius || 6) * (cloud.horizontalSpread || 1.0) * 1.12);
 
                 // Fill positions as a continuous column (no perfectly circular rings)
                 for (let pi = 0; pi < pcnt; pi++) {
@@ -1629,8 +1729,9 @@
                     // use a non-uniform radial distribution with randomized angle to avoid visible ring seams
                     const angle = (pi * 2.37 + Math.random() * 0.8) % (Math.PI * 2);
                     const radius = (Math.random() * 0.9 + 0.1) * shaftRadius * (0.4 + 0.6 * (1 - Math.abs(0.5 - frac)));
-                    const x = cloud.x + Math.cos(angle) * radius + (Math.random() - 0.5) * 0.02;
-                    const z = cloud.z + Math.sin(angle) * radius + (Math.random() - 0.5) * 0.02;
+                    // make geometry local: positions relative to shaft group origin (0,0,0)
+                    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 0.02;
+                    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 0.02;
                     pPos[pi * 3] = x;
                     pPos[pi * 3 + 1] = y;
                     pPos[pi * 3 + 2] = z;
@@ -1654,10 +1755,13 @@
                 points.userData = {
                     cloudRef: cloud,
                     pcnt,
-                    seed: Math.random() * 1000,
                     baseHeight,
-                    shaftRadius
+                    shaftRadius,
+                    // store that geometry is local-space and must be positioned at cloud center
+                    local: true
                 };
+                // position the shaft group at cloud location so the local radius matches cloud footprint
+                points.position.set(cloud.x || 0, 0, cloud.z || 0);
                 // avoid frustum culling so shafts near camera update reliably
                 points.frustumCulled = false;
                 return points;
@@ -1744,6 +1848,41 @@
                     const spawnMultiplier = c.dying ? (0.22 + Math.random()*0.32) : (0.75 + Math.random()*0.85);
                     const toSpawn = Math.max(1, Math.floor(spawnBase * spawnMultiplier));
                     for (let s=0; s<toSpawn; s++) this.spawnDropFromCloud(c);
+
+                    // --- Downfall Sheet System Implementation ---
+                    // Use this.enableShafts (Graphics.rainshafts) to control visibility
+                    if (this.enableShafts && intensity > 0.6) { // lower threshold so moderate precipitation shows sheets
+                        let shaft = this.cloudShafts.get(c);
+                        if (!shaft) {
+                            // compute shaft radius to match cloud precipitation footprint
+                            const computedRadius = Math.max(4.0, (c.radius || 6) * (c.horizontalSpread || 1.0) * 1.12);
+                            shaft = this._createInstancedShaftForCloud(c, intensity);
+                            // update shaft userData to explicit computed radius for consistent updates
+                            if (shaft && shaft.userData) {
+                                shaft.userData.shaftRadius = computedRadius;
+                                // set particle count scaling to radius so visual density matches area
+                                shaft.userData.pcnt = Math.max(120, Math.floor(computedRadius * 8));
+                            }
+                            this.rainshaftGroup.add(shaft);
+                            this.cloudShafts.set(c, shaft);
+                        }
+                        // Update existing shaft visual parameters based on current intensity and computed radius
+                        this._updateShaftVisuals(shaft, c, intensity, heightFactor, turbFactor);
+                    } else if (this.cloudShafts.has(c)) {
+                        // Fade out shaft if intensity drops or shafts are disabled
+                        const shaft = this.cloudShafts.get(c);
+                        if (shaft && shaft.material) shaft.material.opacity = Math.max(0, shaft.material.opacity * 0.9);
+                        // for grouped shafts, iterate children materials if present
+                        if (shaft && shaft.children && shaft.children.length) {
+                            shaft.children.forEach(child => { if (child.material) child.material.opacity = Math.max(0, (child.material.opacity || 0) * 0.9); });
+                        }
+                        if (shaft && shaft.children && shaft.children.length && shaft.children.every(ch => ch.material && ch.material.opacity < 0.01)) {
+                            this.rainshaftGroup.remove(shaft);
+                            this.cloudShafts.delete(c);
+                            if (shaft.geometry) shaft.geometry.dispose();
+                            if (shaft.material) shaft.material.dispose();
+                        }
+                    }
                 }
 
                 // Advanced microphysics interactions (increased iteration count for complex dynamics)
@@ -1986,15 +2125,16 @@
                 const pPos = new Float32Array(pcnt * 3);
 
                 const baseHeight = Math.max(1.2, (cloud.height || 12) - 0.3);
-                const shaftRadius = Math.max(3.6, (cloud.radius || 6) * 0.9);
+                const shaftRadius = Math.max(3.6, (cloud.radius || 6) * (cloud.horizontalSpread || 1.0) * 1.12);
 
                 for (let pi = 0; pi < pcnt; pi++) {
                     const frac = pi / Math.max(1, pcnt - 1);
                     const y = baseHeight * (0.06 + frac * 0.94) + (Math.sin(pi * 0.21) * 0.02);
                     const angle = (pi * 2.37 + Math.random() * 0.8) % (Math.PI * 2);
                     const radius = (Math.random() * 0.9 + 0.1) * shaftRadius * (0.4 + 0.6 * (1 - Math.abs(0.5 - frac)));
-                    const x = cloud.x + Math.cos(angle) * radius + (Math.random() - 0.5) * 0.02;
-                    const z = cloud.z + Math.sin(angle) * radius + (Math.random() - 0.5) * 0.02;
+                    // local coordinates so group.position aligns with cloud center
+                    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 0.02;
+                    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 0.02;
                     pPos[pi * 3] = x;
                     pPos[pi * 3 + 1] = y;
                     pPos[pi * 3 + 2] = z;
@@ -2013,6 +2153,7 @@
 
                 const points = new THREE.Points(pGeo, pMat);
                 points.userData = { cloudRef: cloud, pcnt, baseHeight, shaftRadius, seed: Math.random() * 1000 };
+                points.position.set(cloud.x || 0, 0, cloud.z || 0);
                 points.frustumCulled = false;
                 return points;
             };
@@ -4464,11 +4605,24 @@
             frames++;
             if (t - lastFps > 1000) {
                 document.getElementById('fps').textContent = frames;
+                document.getElementById('frame-time').textContent = (1000 / (frames || 1)).toFixed(1);
                 document.getElementById('particles').textContent = activePart;
                 document.getElementById('clouds').textContent = AppState.cloudSystem && AppState.cloudSystem.clouds ? AppState.cloudSystem.clouds.length : 0;
                 document.getElementById('charge').textContent = AppState.lightningSystem ? Math.floor(AppState.lightningSystem.charge || 0) : 0;
                 document.getElementById('strikes').textContent = AppState.lightningSystem ? (AppState.lightningSystem.count || 0) : 0;
                 document.getElementById('wind').textContent = windSpeed.toFixed(1);
+                
+                // Update Time Display
+                if (window.DayNight) {
+                    const phase = window.DayNight.phase; // 0=midnight, 0.5=noon
+                    // Convert phase (0-1) to hours (0-24)
+                    const hoursTotal = phase * 24;
+                    const hours = Math.floor(hoursTotal);
+                    const minutes = Math.floor((hoursTotal - hours) * 60);
+                    const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                    document.getElementById('time-display').textContent = timeStr;
+                }
+                
                 // update hardware readout occasionally
                 try {
                     const cpuEl = document.getElementById('cpu');
