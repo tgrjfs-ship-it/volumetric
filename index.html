@@ -3,130 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Storm Simulation</title>
+    <title>Weather Sandbox</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root{
+            --ui-pad: 12px;
+            --panel-w: 220px;
+            --panel-radius: 10px;
+            --panel-bg: rgba(0,0,0,0.68);
+            --accent: #6cf;
+            --muted: #9aa;
+        }
         body { overflow: hidden; font-family: 'Noto Sans', sans-serif; }
         #canvas-container { width: 100vw; height: 100vh; }
+
+        /* Base panel styling */
         .ui-panel {
             position: absolute;
-            background: rgba(0, 0, 0, 0.7);
+            background: var(--panel-bg);
             color: white;
-            padding: 14px 16px;
-            border-radius: 10px;
+            padding: 12px;
+            border-radius: var(--panel-radius);
             font-size: 13px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: transform 240ms ease, opacity 240ms ease;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-        }
-        #stats { top: 12px; left: 12px; width: 200px; }
-        #controls { bottom: 12px; left: 12px; font-size: 11px; width: 200px; }
-        #info { bottom: 12px; right: 12px; font-size: 12px; width: 160px; text-align: center; }
-        #toggle-gui {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 8px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-family: 'Noto Sans', sans-serif;
-            font-size: 12px;
             backdrop-filter: blur(8px);
-            transition: all 180ms ease;
-            z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: transform 240ms cubic-bezier(.2,.9,.2,1), opacity 220ms cubic-bezier(.2,.9,.2,1);
+            will-change: transform, opacity;
+            transform-origin: 0 0;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.44);
+            max-width: calc(var(--panel-w) + 8px);
+            pointer-events: auto;
+            z-index: 90;
         }
-        #toggle-gui:hover { background: rgba(0, 0, 0, 0.9); transform: translateY(-1px); }
-        .stat-value { color: #6cf; font-weight: 600; }
-        .hidden { display: none !important; }
-        .title { color: #6cf; font-weight: 600; margin-bottom: 10px; }
-        .top-right-controls {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            display: flex;
-            gap: 8px;
-            z-index: 110;
+        .ui-panel.hidden {
+            transform: translateY(6px) scale(0.992);
+            opacity: 0.02;
+            pointer-events: none;
         }
-        #pause-btn, #fp-toggle, #reset-btn {
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 8px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-family: 'Noto Sans', sans-serif;
-            font-size: 12px;
-            backdrop-filter: blur(8px);
-            transition: all 180ms ease;
-        }
-        #pause-btn:hover, #fp-toggle:hover, #reset-btn:hover { 
-            background: rgba(0, 0, 0, 0.9); 
-            transform: translateY(-1px);
-        }
-        #fp-toggle.active { background: rgba(108, 204, 255, 0.15); color: #6cf; border-color: rgba(108,204,255,0.2); }
 
+        /* Anchors - ensure non-overlap by using safe offsets */
+        #stats { top: var(--ui-pad); left: var(--ui-pad); width: var(--panel-w); }
+        #controls { bottom: var(--ui-pad); left: var(--ui-pad); width: var(--panel-w); font-size: 11px; }
+        #info { bottom: var(--ui-pad); right: var(--ui-pad); font-size: 12px; width: 200px; text-align: center; }
         #graphics {
             position: absolute;
-            right: 12px;
-            top: 120px;
-            width: 220px;
-            background: rgba(0, 0, 0, 0.7);
+            right: var(--ui-pad);
+            top: calc(var(--ui-pad) * 6 + 40px); /* leave space for top-right controls */
+            width: var(--panel-w);
+            background: var(--panel-bg);
             color: white;
-            padding: 14px 16px;
-            border-radius: 10px;
+            padding: 12px;
+            border-radius: var(--panel-radius);
             font-size: 12px;
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
             flex-direction: column;
             gap: 10px;
-            /* make panel scrollable so additional controls fit on small viewports */
             max-height: calc(100vh - 140px);
             overflow: auto;
-            padding-right: 10px;
+            z-index: 88;
         }
+        .top-right-controls > button {
+            transition: transform 160ms cubic-bezier(.2,.9,.2,1), background 140ms ease, box-shadow 160ms ease;
+        }
+        .top-right-controls > button:active { transform: translateY(0); box-shadow: 0 4px 14px rgba(0,0,0,0.36); }
+
+        /* Top-right grouped controls - fixed cluster to avoid overlapping the graphics panel */
+        .top-right-controls {
+            position: absolute;
+            top: var(--ui-pad);
+            right: var(--ui-pad);
+            display: flex;
+            gap: 8px;
+            z-index: 110;
+            align-items: center;
+            pointer-events: auto;
+        }
+        .top-right-controls > button {
+            background: rgba(0,0,0,0.78);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            min-width: 56px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 140ms ease, background 140ms ease;
+        }
+        .top-right-controls > button:hover { transform: translateY(-2px); background: rgba(0,0,0,0.9); }
+
+        #toggle-gui {
+            padding: 8px 10px;
+        }
+        #fp-toggle.active { background: rgba(108, 204, 255, 0.12); color: var(--accent); border-color: rgba(108,204,255,0.14); }
+
+        .stat-value { color: var(--accent); font-weight: 600; }
+        .hidden { display: none !important; }
+        .title { color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+
+        /* Graphics rows */
         .gfx-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 8px;
         }
-        .gfx-label { color: #ddd; font-size: 11px; }
+        .gfx-label { color: #ddd; font-size: 11px; min-width: 64px; }
         .gfx-row input[type="checkbox"] { cursor: pointer; }
         .gfx-row input[type="range"], .gfx-row select {
             flex: 1;
             padding: 4px;
             border-radius: 6px;
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.06);
             color: white;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             font-size: 11px;
         }
         .gfx-row select { cursor: pointer; }
 
-        body.ui-collapsed .ui-panel { transform: translateY(10px) scale(0.985); opacity: 0; pointer-events: none; }
-        body.ui-collapsed #graphics { display: none; }
-
+        /* Reopen button when collapsed */
         #reopen-controls { display: none; }
         body.ui-collapsed #reopen-controls {
             display: block;
             position: absolute;
-            left: 12px;
-            bottom: 12px;
+            left: var(--ui-pad);
+            bottom: var(--ui-pad);
             padding: 8px 10px;
             border-radius: 8px;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.78);
             color: white;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.08);
             z-index: 150;
             cursor: pointer;
             font-size: 12px;
         }
 
+        /* Joystick zones - keep low opacity but non-overlapping with UI */
         .joy-zone {
             position: absolute;
             width: 120px;
@@ -135,26 +152,54 @@
             touch-action: none;
             opacity: 0.0001;
         }
-        #joy-look { right: 12px; bottom: 12px; }
-        #joy-move { left: 12px; bottom: 12px; }
+        #joy-look { right: calc(var(--ui-pad)); bottom: calc(var(--ui-pad) + 16px); }
+        #joy-move { left: calc(var(--ui-pad)); bottom: calc(var(--ui-pad) + 16px); }
 
         #forward-btn {
             position: absolute;
-            right: 16px;
-            bottom: 140px;
+            right: calc(var(--ui-pad));
+            bottom: calc(var(--ui-pad) + 132px);
             width: 72px;
             height: 44px;
             border-radius: 8px;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.78);
             color: white;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.08);
             z-index: 120;
-            font-family: 'Noto Sans', sans-serif;
             font-size: 12px;
             cursor: pointer;
-            transition: all 180ms ease;
+            transition: all 160ms ease;
         }
-        #forward-btn:hover { background: rgba(0,0,0,0.9); transform: translateY(-1px); }
+        #forward-btn:hover { transform: translateY(-2px); background: rgba(0,0,0,0.9); }
+
+        /* Responsive behavior: stack panels on narrow viewports to avoid overlap */
+        @media (max-width: 900px) {
+            :root{ --panel-w: 200px; }
+            #graphics {
+                right: 50%;
+                transform: translateX(50%);
+                top: calc(var(--ui-pad) + 60px);
+                width: calc(90vw - 24px);
+                max-height: calc(50vh);
+            }
+            .top-right-controls { gap: 6px; right: 8px; top: 8px; }
+            #stats { left: 8px; top: 8px; width: 44vw; }
+            #controls { left: 8px; bottom: 8px; width: 44vw; }
+            #info { right: 8px; bottom: 8px; width: 38vw; }
+            #forward-btn { right: 12px; bottom: 120px; }
+            #joy-look { right: 12px; bottom: 12px; }
+            #joy-move { left: 12px; bottom: 12px; }
+        }
+
+        @media (max-width: 520px) {
+            .ui-panel { padding: 10px; font-size: 12px; border-radius: 8px; }
+            #graphics { top: calc(var(--ui-pad) + 56px); width: calc(94vw); left: 3%; transform: none; right: auto; }
+            #stats, #controls, #info { width: calc(46vw); }
+            #stats { top: 6px; left: 6px; }
+            #controls { bottom: 6px; left: 6px; }
+            #info { bottom: 6px; right: 6px; width: 40vw; }
+            .top-right-controls { right: 6px; top: 6px; }
+        }
     </style>
 </head>
 <body>
@@ -194,11 +239,11 @@
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Rain ×</label>
-            <input id="rain-intensity-range" type="range" min="0.3" max="2.5" step="0.05" value="1.0" />
+            <input id="rain-intensity-range" type="range" min="0.1" max="12" step="0.05" value="1.0" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Evap ×</label>
-            <input id="evap-mult-range" type="range" min="0.2" max="3.0" step="0.05" value="1.0" />
+            <input id="evap-mult-range" type="range" min="0.2" max="10" step="0.05" value="1.0" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Lightning</label>
@@ -206,23 +251,23 @@
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Particles</label>
-            <input id="particle-range" type="range" min="200" max="3000" step="100" value="300" />
+            <input id="particle-range" type="range" min="100" max="8000" step="50" value="600" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Clouds</label>
-            <input id="cloud-range" type="range" min="10" max="200" step="10" value="50" />
+            <input id="cloud-range" type="range" min="10" max="400" step="5" value="80" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Wind ×</label>
-            <input id="wind-range" type="range" min="0.1" max="3.0" step="0.05" value="1.0" />
+            <input id="wind-range" type="range" min="0.05" max="5.0" step="0.01" value="1.0" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">Pixel Ratio</label>
-            <input id="px-range" type="range" min="0.5" max="2" step="0.1" value="1" />
+            <input id="px-range" type="range" min="0.25" max="3" step="0.05" value="1" />
         </div>
         <div class="gfx-row">
             <label class="gfx-label">IR ×</label>
-            <input id="ir-range" type="range" min="0.4" max="2.4" step="0.05" value="1.0" />
+            <input id="ir-range" type="range" min="0.1" max="20" step="0.05" value="1.0" />
         </div>
     </div>
     <div id="info" class="ui-panel">
@@ -265,12 +310,47 @@
             }
         };
 
+        // small helper to show/hide a persistent performance warning overlay
+        (function perfWarningHelpers() {
+            AppState._perfWarningEl = null;
+            AppState._fpsWarnShown = false;
+            AppState._rayWarnShown = false;
+            window.showPerfWarning = function (msg, id = 'perf-warning', ttl = 0) {
+                try {
+                    if (!AppState._perfWarningEl) {
+                        const el = document.createElement('div');
+                        el.id = id;
+                        el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(200,40,40,0.92);color:white;padding:10px 14px;border-radius:8px;z-index:9999;font-family:Segoe UI,Arial;box-shadow:0 6px 24px rgba(0,0,0,0.5);pointer-events:none';
+                        document.body.appendChild(el);
+                        AppState._perfWarningEl = el;
+                    }
+                    AppState._perfWarningEl.textContent = msg;
+                    AppState._perfWarningEl.style.opacity = '1';
+                    AppState._perfWarningEl.style.display = 'block';
+                    if (ttl > 0) {
+                        setTimeout(() => {
+                            if (AppState._perfWarningEl) AppState._perfWarningEl.style.opacity = '0';
+                            setTimeout(() => { if (AppState._perfWarningEl) AppState._perfWarningEl.style.display = 'none'; }, 700);
+                        }, ttl);
+                    }
+                } catch (e) { console.warn('showPerfWarning failed', e); }
+            };
+            window.hidePerfWarning = function () {
+                try {
+                    if (AppState._perfWarningEl) {
+                        AppState._perfWarningEl.style.opacity = '0';
+                        setTimeout(() => { if (AppState._perfWarningEl) AppState._perfWarningEl.style.display = 'none'; }, 700);
+                    }
+                } catch (e) { }
+            };
+        })();
+
         // make keyboard state global so animate() and other modules can read it reliably
         window.keys = window.keys || {};
 
         // Graphics settings defaults
         const Graphics = {
-            shadows: true,
+            shadows: false,
             rainshafts: false,
             lightning: true,
             particleDetail: 300,
@@ -281,22 +361,36 @@
             volumetricResolution: 12,
             cloudRenderMode: 'volumetric',
             evapMultiplier: 1,
-            hailDensity: 1.2,           // NEW: hail particle density
-            windLayerComplexity: 2.0,   // NEW: wind field layer interactions
-            microphysicsDetail: 1.5,    // NEW: precipitation microphysical complexity
-            atmosphericStability: true, // NEW: CAPE/stability calculations
-            windMultiplier: 1.0,        // NEW: global wind speed multiplier
-            renderDistance: 260,         // NEW: max distance (units) for cloud/precip interactions & spawning
-            rainIntensity: 1.0, // NEW: multiplier for precipitation strength
-            evapMultiplier: 1.0 // NEW UI-exposed evaporation multiplier (kept in sync with evaporationSystem)
-            , irMultiplier: 1.0 // NEW: infrared multiplier to scale day/night temperature amplitude
+            hailDensity: 1.2,
+            windLayerComplexity: 2.0,
+            microphysicsDetail: 1.5,
+            atmosphericStability: true,
+            windMultiplier: 1.0,
+            renderDistance: 260,
+            rainIntensity: 1.0,
+            evapMultiplier: 1.0,
+            irMultiplier: 1.0,
+            // new toggles
+            rayTracing: false,
+            greenhouse: 0.0, // extra global warming degrees
+            performanceWarningSeen: false,
+            windVectors: false,
+            sun: true,
+            godrays: true,
+            rainbow: true,
+            rainFog: true,
+            simSpeed: 1.0,
+            // NEW: charge accumulation multiplier for lightning system
+            chargeMultiplier: 1.0,
+            // NEW: V-Sync toggle - when true use renderer.setAnimationLoop which syncs to display vsync
+            vsync: true
         };
 
         // environmental helper: temperature (°C) and humidity (0..1) estimate at position
         function sampleEnvironment(x, z, altitude = 12) {
             // simple lapse rate: 15°C at sea level, -6.5°C per km
             // include day/night infrared offset (DayNight.tempOffset applied globally)
-            const baseSeaTemp = 15 + (window.DayNight ? (window.DayNight.tempOffset || 0) : 0);
+            const baseSeaTemp = 30 + (window.DayNight ? (window.DayNight.tempOffset || 0) : 0);
             const temp = baseSeaTemp - (altitude / 1000) * 6.5;
             // humidity base: higher near water bodies, falloff with distance
             let h = 0.25; // background humidity
@@ -368,11 +462,38 @@
                 }
 
                 pos[i + 2] = z;
-                // color based on height for visual variety
-                const heightFactor = Math.max(0, Math.min(1, (z + 2) / 4));
-                col[i] = isWater ? 0.2 : (0.35 + heightFactor * 0.25);
-                col[i + 1] = isWater ? 0.4 : (0.5 + heightFactor * 0.15);
-                col[i + 2] = isWater ? 0.7 : (0.25 + heightFactor * 0.1);
+                // reworked terrain texture: multi-band stratified coloring with subtle noise
+                const heightFactor = Math.max(0, Math.min(1, (z + 6) / 22));
+                // multiple bands for grass/rock/scree/snow
+                const band = Math.floor(heightFactor * 5);
+                const bandBlend = (heightFactor * 5) - band;
+                let top = [0.85, 0.9, 0.95];
+                let mid = [0.45, 0.55, 0.28];
+                let low = [0.18, 0.32, 0.6];
+                if (isWater) {
+                    col[i] = 0.18; col[i + 1] = 0.42; col[i + 2] = 0.72;
+                } else {
+                    // create a layered palette: low->grass, mid->rock, high->alpine
+                    if (band <= 1) {
+                        // low grass
+                        const g = 0.24 + 0.16 * bandBlend + Math.sin(x * 0.02) * 0.03;
+                        col[i] = Math.min(1, g + 0.06);
+                        col[i + 1] = Math.min(1, 0.42 + 0.12 * bandBlend + Math.cos(y * 0.017) * 0.03);
+                        col[i + 2] = Math.min(1, 0.18 + 0.05 * bandBlend);
+                    } else if (band <= 3) {
+                        // rocky mid
+                        const r = 0.36 + 0.18 * bandBlend + Math.sin((x + y) * 0.011) * 0.04;
+                        col[i] = Math.min(1, r);
+                        col[i + 1] = Math.min(1, 0.38 + 0.12 * bandBlend);
+                        col[i + 2] = Math.min(1, 0.28 - 0.06 * bandBlend);
+                    } else {
+                        // alpine / snow-stipple
+                        const s = 0.72 + 0.18 * bandBlend;
+                        col[i] = Math.min(1, s - Math.random() * 0.06);
+                        col[i + 1] = Math.min(1, s - 0.02 - Math.random() * 0.05);
+                        col[i + 2] = Math.min(1, s - 0.06 - Math.random() * 0.04);
+                    }
+                }
             }
 
             geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -395,20 +516,80 @@
                 this.time = 0;
                 const segments = 128;
                 this.geo = new THREE.PlaneGeometry(size, size, segments, segments);
-                this.mat = new THREE.MeshStandardMaterial({
-                    color: new THREE.Color(0x4aa6d6),
-                    metalness: 0.25,
-                    roughness: 0.18,
-                    transparent: true,
-                    opacity: 0.92,
-                    envMapIntensity: 0.6,
-                    side: THREE.DoubleSide
-                });
-
-                // store original positions for CPU wave displacement
+                // store original positions for CPU wave displacement fallback (kept for safety)
                 const pos = this.geo.attributes.position;
                 this.basePos = new Float32Array(pos.array.length);
                 for (let i = 0; i < pos.array.length; i++) this.basePos[i] = pos.array[i];
+
+                this.mesh = null;
+
+                // Create a simple vertex/fragment shader for animated waves + fresnel rim tint
+                const vertexShader = `
+                    uniform float uTime;
+                    uniform float uWind;
+                    attribute vec3 position;
+                    varying vec3 vNormal;
+                    varying vec3 vWorldPos;
+                    varying float vHeight;
+                    // classic 3-wave superposition
+                    float wave(vec2 p, float amp, float freq, float speed, vec2 dir) {
+                        float phase = dot(p, dir) * freq + uTime * speed;
+                        return sin(phase) * amp;
+                    }
+                    void main() {
+                        vNormal = normal;
+                        vec3 pos = position;
+                        // sample base x,z for waves
+                        vec2 p = pos.xz;
+                        float h = 0.0;
+                        h += wave(p, 0.8, 0.006, 0.8, vec2(1.0, 0.2));
+                        h += wave(p, 0.35, 0.018, 1.6, vec2(0.3, 1.0));
+                        h += wave(p, 0.18, 0.045, 2.2, vec2(0.7, -0.4));
+                        // wind coupling
+                        h *= (0.7 + clamp(uWind, 0.0, 2.0) * 0.18);
+                        pos.y += h;
+                        vHeight = h;
+                        vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+                        vWorldPos = worldPosition.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                    }
+                `;
+                const fragmentShader = `
+                    uniform vec3 uBaseColor;
+                    uniform vec3 uFresnelTint;
+                    uniform float uOpacity;
+                    varying vec3 vNormal;
+                    varying vec3 vWorldPos;
+                    varying float vHeight;
+                    void main() {
+                        // simple fresnel based rim and height-based spec
+                        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+                        float fresnel = pow(1.0 - max(0.0, dot(normalize(vNormal), viewDir)), 2.0);
+                        // height brighten
+                        float bloom = smoothstep(0.0, 0.9, vHeight * 0.6 + fresnel * 0.6);
+                        vec3 col = uBaseColor * (0.75 + bloom * 0.6);
+                        // mix in a cool fresnel tint on glancing angles
+                        col = mix(col, uFresnelTint, fresnel * 0.55);
+                        // subtle rim light
+                        float alpha = uOpacity * (0.92 + bloom * 0.16);
+                        gl_FragColor = vec4(col, alpha);
+                    }
+                `;
+
+                this.mat = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0.0 },
+                        uWind: { value: Graphics.windMultiplier || 1.0 },
+                        uBaseColor: { value: new THREE.Color(0x4aa6d6) },
+                        uFresnelTint: { value: new THREE.Color(0x88cfe8) },
+                        uOpacity: { value: 0.92 }
+                    },
+                    vertexShader,
+                    fragmentShader,
+                    transparent: true,
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
 
                 this.mesh = new THREE.Mesh(this.geo, this.mat);
                 this.mesh.rotation.x = -Math.PI / 2;
@@ -417,7 +598,7 @@
                 this.mesh.frustumCulled = false;
                 AppState.scene.add(this.mesh);
 
-                // simple normal helper for fresnel-ish highlight (no heavy shader)
+                // fallback CPU update params retained for compatibility
                 this.waveParams = [
                     { amp: 0.8, freq: 0.006, speed: 0.8, dir: [1, 0.2] },
                     { amp: 0.35, freq: 0.018, speed: 1.6, dir: [0.3, 1.0] },
@@ -426,29 +607,38 @@
             }
 
             update(dt) {
+                // update shader time and wind uniform
                 this.time += dt * 0.0015;
-                const pos = this.geo.attributes.position.array;
-                const len = pos.length / 3;
-                for (let i = 0; i < len; i++) {
-                    const ix = i * 3;
-                    const bx = this.basePos[ix];
-                    const bz = this.basePos[ix + 2];
-                    let y = 0;
-                    for (let w of this.waveParams) {
-                        const phase = (bx * w.freq * w.dir[0] + bz * w.freq * w.dir[1]) + this.time * w.speed;
-                        y += Math.sin(phase * Math.PI * 2) * w.amp;
-                    }
-                    // small wind coupling: use global wind average to bias wave amplitude
-                    const windMult = (typeof Graphics !== 'undefined' ? (Graphics.windMultiplier || 1.0) : 1.0);
-                    pos[ix + 1] = -1.6 + y * Math.min(1.6, 0.7 * windMult);
+                if (this.mat && this.mat.uniforms) {
+                    this.mat.uniforms.uTime.value = this.time;
+                    this.mat.uniforms.uWind.value = (Graphics.windMultiplier || 1.0);
+                    // small dynamic base color shift
+                    const g = 0.45 + 0.08 * Math.sin(this.time * 0.9);
+                    const base = new THREE.Color(0.28 + g * 0.4, 0.6 + g * 0.12, 0.75 + g * 0.06);
+                    this.mat.uniforms.uBaseColor.value.copy(base);
+                    this.mat.uniforms.uFresnelTint.value.setRGB(0.65 + Math.sin(this.time*0.13)*0.06, 0.85, 0.95);
                 }
-                this.geo.attributes.position.needsUpdate = true;
-                this.geo.computeVertexNormals();
-                // slight color shift with time/angle to emulate glint
-                const g = 0.45 + 0.1 * Math.sin(this.time * 0.9);
-                this.mat.color.setRGB(0.28 + g * 0.4, 0.6 + g * 0.12, 0.75 + g * 0.06);
-                // subtle environmental reflection intensity tied to wind
-                this.mat.roughness = Math.max(0.06, 0.3 - (Graphics.windMultiplier || 1.0) * 0.06);
+
+                // keep CPU vertex fallback for devices that may not support shaders perfectly
+                // We only update a tiny amount on CPU to keep normals reasonable if shader fails
+                if (!this.mesh || !this.mesh.material || !(this.mesh.material.isShaderMaterial)) {
+                    const pos = this.geo.attributes.position.array;
+                    const len = pos.length / 3;
+                    for (let i = 0; i < len; i++) {
+                        const ix = i * 3;
+                        const bx = this.basePos[ix];
+                        const bz = this.basePos[ix + 2];
+                        let y = 0;
+                        for (let w of this.waveParams) {
+                            const phase = (bx * w.freq * w.dir[0] + bz * w.freq * w.dir[1]) + this.time * w.speed;
+                            y += Math.sin(phase * Math.PI * 2) * w.amp;
+                        }
+                        const windMult = (typeof Graphics !== 'undefined' ? (Graphics.windMultiplier || 1.0) : 1.0);
+                        pos[ix + 1] = -1.6 + y * Math.min(1.6, 0.7 * windMult);
+                    }
+                    this.geo.attributes.position.needsUpdate = true;
+                    this.geo.computeVertexNormals();
+                }
             }
 
             dispose() {
@@ -596,7 +786,64 @@
                             const hue = baseH - Math.min(0.04, stress * 0.12);
                             leaf.material.color.setHSL(hue, 0.38, 0.18);
                         }
+
+                        // Handle ongoing fire if ignited by lightning
+                        if (t.userData && t.userData.onFire) {
+                            t.userData.fireTime = (t.userData.fireTime || 180) - (dt * 0.06 * (Graphics.simSpeed || 1));
+                            // tint canopy to hot ember color and increase emissive
+                            const c = t.children.find(cn => cn.geometry === this.leafGeo);
+                            if (c && c.material) {
+                                c.material.color.lerp(new THREE.Color(0xbb3b12), 0.06);
+                                c.material.emissive = c.material.emissive || new THREE.Color(0x000000);
+                                c.material.emissive.lerp(new THREE.Color(0x662200), 0.04);
+                                c.material.opacity = Math.max(0.28, (c.material.opacity || 1.0) * 0.995);
+                            }
+                            // spawn tiny ember particles occasionally
+                            if (t.userData.fireTime % 28 < 1 && Math.random() < 0.28) {
+                                const pgeo = new THREE.BufferGeometry();
+                                const arr = new Float32Array(3);
+                                arr[0] = t.position.x + (Math.random()-0.5)*0.6;
+                                arr[1] = t.position.y + 1.6 + Math.random()*0.6;
+                                arr[2] = t.position.z + (Math.random()-0.5)*0.6;
+                                pgeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+                                const pmat = new THREE.PointsMaterial({ size: 0.18, color: 0xff8b33, transparent: true, opacity: 0.9 });
+                                const ember = new THREE.Points(pgeo, pmat);
+                                ember.userData = { life: 0.9 + Math.random() * 0.7, vy: 0.06 + Math.random()*0.06 };
+                                AppState.scene.add(ember);
+                                (this._embers = this._embers || []).push(ember);
+                            }
+                            if (t.userData.fireTime <= 0) {
+                                // tree burnt down: remove canopy and reduce trunk visibility
+                                try {
+                                    if (t.userData.canopy) {
+                                        t.userData.canopy.visible = false;
+                                        if (t.userData.canopy.geometry) t.userData.canopy.geometry.dispose();
+                                        if (t.userData.canopy.material) t.userData.canopy.material.dispose();
+                                    }
+                                } catch(e){}
+                                // leave charred stump by darkening trunk
+                                if (t.userData.trunk && t.userData.trunk.material) {
+                                    t.userData.trunk.material.color.setRGB(0.08,0.06,0.06);
+                                }
+                                t.userData.onFire = false;
+                            }
+                        }
                     } catch(e) { continue; }
+                }
+                // update ember lifetimes for burning trees
+                if (this._embers) {
+                    for (let i = this._embers.length - 1; i >= 0; i--) {
+                        const p = this._embers[i];
+                        p.userData.life -= 0.02;
+                        p.material.opacity *= 0.96;
+                        p.position.y += p.userData.vy * 0.6;
+                        if (p.userData.life <= 0) {
+                            AppState.scene.remove(p);
+                            if (p.geometry) p.geometry.dispose();
+                            if (p.material) p.material.dispose();
+                            this._embers.splice(i,1);
+                        }
+                    }
                 }
             }
 
@@ -819,14 +1066,13 @@
             update(deltaMs) {
                 this.time = (this.time + deltaMs) % this.dayLength;
                 this.phase = (this.time / this.dayLength);
-                // dayStrength follows a smooth curve: peak at 0.5 (noon)
                 const angle = this.phase * Math.PI * 2;
-                // dayStrength ranges 0..1 (sun elevation proxy)
                 this.dayStrength = Math.max(0, Math.sin(angle) * 0.5 + 0.5);
-                // infrared temperature offset: warmer during day, cooler at night
-                // apply global IR multiplier from Graphics if present
+                // new greenhouse effect: Graphics.greenhouse adds baseline warming and damps night cooling
+                const gh = (typeof Graphics !== 'undefined' ? (Graphics.greenhouse || 0) : 0);
                 const irMul = (typeof Graphics !== 'undefined' && Graphics.irMultiplier) ? Number(Graphics.irMultiplier) : 1.0;
-                this.tempOffset = Math.cos(angle) * this.tempAmplitude * 0.5 * irMul + (this.dayStrength - 0.5) * this.tempAmplitude * 0.5 * irMul;
+                // warmer baseline from greenhouse, plus scaled diurnal amplitude
+                this.tempOffset = gh + (Math.cos(angle) * this.tempAmplitude * 0.5 * irMul + (this.dayStrength - 0.5) * this.tempAmplitude * 0.5 * irMul) * Math.max(0.6, 1 - gh*0.06);
             }
         };
 
@@ -1367,27 +1613,32 @@
             }
 
             findNearestCluster(x, z, maxDist = 25) {
+                // more permissive clustering: search larger radius and prefer strongest nearby clusters
                 let nearest = null;
-                let minDist = maxDist;
-                
+                let minDist = Math.max(maxDist, 60); // bias to larger search area for clumping
                 for (const cluster of this.clusterCenters) {
                     const dist = Math.sqrt((x - cluster.x) ** 2 + (z - cluster.z) ** 2);
                     if (dist < minDist) {
                         minDist = dist;
                         nearest = cluster;
+                    } else if (dist < maxDist * 1.8 && cluster.strength > (nearest && nearest.strength ? nearest.strength : 0)) {
+                        // allow slightly farther, stronger cluster to attract new growth (clumping)
+                        nearest = cluster;
+                        minDist = dist;
                     }
                 }
-                
                 return nearest;
             }
 
             createCluster(x, z) {
+                // stronger clusters with increased attraction to produce clumping behavior
                 const cluster = {
                     x, z,
-                    strength: 0.7 + Math.random() * 0.3,
+                    strength: 1.0 + Math.random() * 1.2,
                     age: 0,
-                    maxAge: 400 + Math.random() * 300,
-                    hasUpdraft: false
+                    maxAge: 700 + Math.random() * 600,
+                    hasUpdraft: false,
+                    pull: 0.6 + Math.random() * 0.7
                 };
                 this.clusterCenters.push(cluster);
                 return cluster;
@@ -1637,13 +1888,16 @@
                 const shear = AppState.windShearSystem ? AppState.windShearSystem.computeShear(x, z) : 0;
                 
                 const baseLift = updraft * 1.4 + orographicLift * 1.2 + convergence * 1.6;
+                // evaporation multiplier increases effective lift/formation tendency
+                const evapMult = (typeof Graphics !== 'undefined' ? (Graphics.evapMultiplier || 1.0) : 1.0);
+                const adjBaseLift = baseLift * evapMult;
                 const minLift = 0.01 * (1 - Math.min(1, env.humidity));
-                const humidityThreshold = 0.32 + (1 - Math.min(1, baseLift * 6)) * 0.28;
+                const humidityThreshold = 0.32 + (1 - Math.min(1, adjBaseLift * 6)) * 0.28;
                 const humidityOk = env.humidity >= humidityThreshold;
-                const liftOk = baseLift > minLift;
+                const liftOk = adjBaseLift > minLift;
                 
                 // Increase formation probability for stronger conditions
-                const formationChance = Math.min(0.95, (humidityOk ? 0.62 : 0.06) + (liftOk ? 0.35 : 0) + convergence * 1.8 + updraft * 0.25);
+                const formationChance = Math.min(0.95, (humidityOk ? 0.62 : 0.06) + (liftOk ? 0.45 : 0) + convergence * 1.8 + updraft * 0.25 + (evapMult-1)*0.08);
                 if (Math.random() > formationChance) {
                     // Rare high-altitude cirrus formation
                     if (env.humidity > 0.2 && Math.random() < 0.03) {
@@ -1709,6 +1963,30 @@
                 c.grp.position.set(x, 0, z);
                 this.group.add(c.grp);
                 
+                // Seed initial puffs immediately so new clouds appear with full structure
+                {
+                    const seedCount = 6 + Math.floor(Math.min(8, Math.max(0, c.mass)));
+                    for (let si = 0; si < seedCount; si++) {
+                        const a = Math.random() * Math.PI * 2;
+                        const spread = Math.max(1.6, c.radius * (0.8 + Math.random() * 0.6));
+                        const px = Math.cos(a) * spread;
+                        const pz = Math.sin(a) * spread;
+                        const baseH = c.height || (c.baseHeight + 0.8);
+                        const ph = baseH + (Math.random() - 0.4) * 1.8 + (c.condensationLevel || 0) * 3.0;
+                        const dark = Math.min(0.28, 0.06 + (c.condensationLevel || 0) * 0.35 + Math.random() * 0.06);
+                        const turb = Math.min(0.9, c.turbulence || 0.12);
+                        const size = (1.6 + Math.random() * 2.6) * (c.stage === 'cumulonimbus' ? 1.4 : 1.0);
+                        const puff = this.makePuff(px, ph, pz, size, dark, turb, undefined);
+                        // place relative to cloud group and allow fade-in handling
+                        c.puffs.push(puff);
+                        c.grp.add(puff);
+                    }
+                    // give an initial stronger vertical push so the cloud develops height faster
+                    c.verticalVelocity = Math.max(0.08, (c.verticalVelocity || 0) + 0.03 + (c.mass || 0) * 0.006);
+                    // bump initial mass slightly to ensure growth logic activates
+                    c.mass = Math.max(c.mass, 1.6 + Math.random() * 0.8);
+                }
+                
                 if (AppState.detailedMicrophysics) {
                     AppState.detailedMicrophysics.initializeSpectrum(c);
                 }
@@ -1717,11 +1995,11 @@
 
             checkMerge(cloud1, cloud2) {
                 const dist = Math.sqrt((cloud1.x - cloud2.x) ** 2 + (cloud1.z - cloud2.z) ** 2);
-                const mergeRadius = (cloud1.radius * cloud1.horizontalSpread + cloud2.radius * cloud2.horizontalSpread) * 0.7;
-                
-                if (dist < mergeRadius && cloud1.canMerge && cloud2.canMerge && 
-                    cloud1.age > 50 && cloud2.age > 50 &&
-                    Math.abs(cloud1.height - cloud2.height) < 8) {
+                // more aggressive merging to create clumps: larger merge radius and more permissive age/height checks
+                const mergeRadius = (cloud1.radius * cloud1.horizontalSpread + cloud2.radius * cloud2.horizontalSpread) * 1.1;
+                if (dist < mergeRadius && cloud1.canMerge && cloud2.canMerge &&
+                    (cloud1.age > 20 || cloud2.age > 20) &&
+                    Math.abs(cloud1.height - cloud2.height) < 14) {
                     return true;
                 }
                 return false;
@@ -1804,9 +2082,16 @@
                     const w = AppState.windField.getAt(cluster.x, 10, cluster.z) || { x: 0, z: 0 };
                     cluster.x += w.x * 0.02;
                     cluster.z += w.z * 0.02;
-                    // clusters decay faster in low-CAPE environments
-                    const cape = AppState.atmosphericLayers ? AppState.atmosphericLayers.computeCALE(8, 20) : 500;
-                    cluster.maxAge = Math.max(200, 400 - cape / 10);
+                    // clusters persist longer and strengthen slowly if nearby clouds exist
+                    const nearby = this.clouds.filter(c => Math.hypot(c.x - cluster.x, c.z - cluster.z) < (cluster.pull ? 40 * cluster.pull : 48));
+                    if (nearby.length > 2) {
+                        cluster.strength = Math.min(3.0, cluster.strength + 0.002 * nearby.length);
+                        cluster.maxAge = Math.max(cluster.maxAge, 800);
+                    } else {
+                        // clusters decay faster in low-CAPE environments
+                        const cape = AppState.atmosphericLayers ? AppState.atmosphericLayers.computeCALE(8, 20) : 500;
+                        cluster.maxAge = Math.max(200, 400 - cape / 10);
+                    }
                     
                     // Create updraft for mature clusters with probabilistic triggering
                     if (cluster.age === Math.max(30, cluster.maxAge / 8) && !cluster.hasUpdraft && Math.random() > (1 - cape / 2500)) {
@@ -1833,9 +2118,16 @@
                         const dist = Math.sqrt(dx*dx + dz*dz);
                         if (dist > (Graphics.renderDistance || 260) * 1.4) { attempts++; continue; }
 
-                        const nearCluster = this.findNearestCluster(spawnX, spawnZ);
-                        if (!nearCluster && Math.random() < 0.25) {
+                        // bias spawning toward existing clusters strongly so clouds clump
+                        const nearCluster = this.findNearestCluster(spawnX, spawnZ, 40);
+                        if (!nearCluster && Math.random() < 0.48) {
+                            // sometimes create new cluster, but at higher chance to seed groups
                             this.createCluster(spawnX, spawnZ);
+                        } else if (nearCluster && Math.random() < 0.8 * (nearCluster.pull || 0.6)) {
+                            // if cluster nearby, nudge spawn to cluster center to produce clumping
+                            const jitter = (Math.random() - 0.5) * 0.6 * nearCluster.strength;
+                            spawnX = nearCluster.x + (Math.random() - 0.5) * 8 * nearCluster.pull + jitter;
+                            spawnZ = nearCluster.z + (Math.random() - 0.5) * 8 * nearCluster.pull + jitter;
                         }
 
                         c = this.grow(spawnX, spawnZ);
@@ -1905,15 +2197,18 @@
                                         const influence = 1 - dist / influenceRadius;
                                         const cell = AppState.windField.field[gx][gy][gz];
                                         if (!cell) continue;
-                                        // radial outflow from cloud base + small rotational component from tilt/turbulence
+                                        // radial outflow from cloud base + rotational component from tilt/turbulence
+                                        // stronger forcing scaled by cloud structure (mass, turbulence, horizontalSpread)
                                         const dirx = (dx / (dist + 0.0001));
                                         const dirz = (dz / (dist + 0.0001));
-                                        // push outward (or inward when cloud collapsing -> negative buoyancy) scaled by cloudForce
-                                        const outflow = cloudForce * 0.04 * influence;
-                                        cell.x += -dirx * outflow * (1 + (c.shearTilt || 0) * 0.8);
-                                        cell.z += -dirz * outflow * (1 + (c.shearTilt || 0) * 0.8);
-                                        // small rotational shear from cloud rotationRate/turbulence
-                                        const rot = (c.rotationRate || 0) * 0.008 * influence;
+                                        // scale cloudForce with horizontalSpread and widthFactor for structural influence
+                                        const structureScale = (1 + (c.horizontalSpread || 1.0) * 0.6 + (c.widthFactor || 1.0) * 0.4);
+                                        const outflow = cloudForce * 0.12 * structureScale * influence; // stronger visual forcing
+                                        // apply radial push (outflow), with extra effect if cloud tilt/sheer present
+                                        cell.x += -dirx * outflow * (1 + (c.shearTilt || 0) * 0.9);
+                                        cell.z += -dirz * outflow * (1 + (c.shearTilt || 0) * 0.9);
+                                        // rotational shear from cloud rotationRate/turbulence (creates local vorticity)
+                                        const rot = (c.rotationRate || 0) * 0.02 * influence * (1 + (c.turbulence || 0) * 0.8);
                                         cell.x += -dirz * rot;
                                         cell.z += dirx * rot;
                                         // mark a low-level gust signature for precipitation/visual systems
@@ -1926,6 +2221,49 @@
                     } catch (e) {
                         // swallow errors to avoid breaking cloud updates
                     }
+
+                    // --- CLOUD-INDUCED STRONG GUST EFFECTS (camera shake & urban damage) ---
+                    try {
+                        // sample local near-surface wind after injections
+                        const localWind = AppState.windField.getAt(c.x, 1.6, c.z) || { x: 0, z: 0 };
+                        const localMag = Math.hypot(localWind.x || 0, localWind.z || 0);
+                        // if near-cloud gusts exceed threshold, apply camera shake scaled by proximity/intensity
+                        const gustTrigger = 1.6; // tuned threshold where effects become noticeable
+                        if (localMag > gustTrigger) {
+                            const proximity = Math.min(1, localMag / (gustTrigger * 2.4));
+                            const shakeStrength = 0.6 + proximity * 3.4;
+                            AppState.cameraControls.shake.intensity = Math.max(AppState.cameraControls.shake.intensity || 0, shakeStrength);
+                            AppState.cameraControls.shake.duration = Math.max(AppState.cameraControls.shake.duration || 0, 700);
+                            AppState.cameraControls.shake.time = 0;
+
+                            // Damage nearby urban buildings proportionally to gust strength
+                            if (AppState.urbanSystem && AppState.urbanSystem.cities) {
+                                const damageRadius = Math.max(12, (c.radius || 6) * 1.8 + proximity * 40);
+                                for (const city of AppState.urbanSystem.cities) {
+                                    for (let bi = city.buildings.length - 1; bi >= 0; bi--) {
+                                        const bmesh = city.buildings[bi];
+                                        if (!bmesh || !bmesh.position) continue;
+                                        const dx = bmesh.position.x + city.x - c.x;
+                                        const dz = bmesh.position.z + city.z - c.z;
+                                        const d = Math.hypot(dx, dz);
+                                        if (d < damageRadius && Math.random() < Math.min(0.4, proximity * 0.16 + (localMag - gustTrigger) * 0.08)) {
+                                            // apply visible damage: darken and slightly tilt/scale the building; occasionally remove tall structures
+                                            try {
+                                                if (bmesh.material && bmesh.material.color) bmesh.material.color.lerp(new THREE.Color(0x332f2f), 0.28);
+                                                bmesh.rotation.z += (Math.random() - 0.5) * 0.08 * proximity;
+                                                bmesh.scale.y *= (0.96 + Math.random() * 0.02);
+                                                // chance to collapse small buildings when gusts are extremely strong
+                                                if (localMag > gustTrigger * 2.4 && Math.random() < 0.05 * proximity) {
+                                                    city.group.remove(bmesh);
+                                                    city.buildings.splice(bi, 1);
+                                                }
+                                            } catch (er) {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) { /* fail silently */ }
 
                     // --- TREE DAMAGE / BREAKING CHECK ---
                     try {
@@ -2450,15 +2788,19 @@
                 this.cloudSystemRef = cloudSystemRef;
 
                 // particle pool parameters (increased for heavier precipitation)
-                this.max = 2500; // larger pool for heavy storms
+                this.max = 2500;
                 this.drops = new Array(this.max).fill(null).map(()=>({ active: false }));
                 this.pos = new Float32Array(this.max * 3);
                 this.vel = new Array(this.max).fill(null).map(()=>({ y:0, vx:0, vz:0 }));
                 this.size = new Float32Array(this.max);
-                this.type = new Array(this.max).fill('rain'); // 'rain', 'sleet', 'snow', 'freezing_rain'
+                this.type = new Array(this.max).fill('rain');
                 this.age = new Uint16Array(this.max);
-                this.life = new Float32Array(this.max); // normalized life [0..1] for fades
-                this.quality = new Float32Array(this.max); // microphysical property: droplet concentration / crystal porosity
+                this.life = new Float32Array(this.max);
+                this.quality = new Float32Array(this.max);
+
+                // NEW: fluid dynamics properties per drop
+                this.dragCoeff = new Float32Array(this.max); // aerodynamic drag (0.5 for sphere, varies by type)
+                this.density = new Float32Array(this.max); // water density relative to size
 
                 // shafts (cloud-local organized precipitation columns)
                 // Rainshafts disabled in favor of denser drops and instanced splashes
@@ -2474,36 +2816,124 @@
                     shaftMat: new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
                 };
 
+                // REWORKED: Use line segments for rain streaks instead of point sprites with dots
+                const streakGeometry = new THREE.BufferGeometry();
+                const maxStreaks = 3000;
+                const streakPositions = new Float32Array(maxStreaks * 6); // 2 points per streak
+                streakGeometry.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+                
+                const streakMaterial = new THREE.LineBasicMaterial({
+                    color: new THREE.Color(0xc8dff5),
+                    transparent: true,
+                    opacity: 0.85,
+                    linewidth: 1.2,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.rainStreaks = new THREE.LineSegments(streakGeometry, streakMaterial);
+                this.rainStreaks.frustumCulled = false;
+                AppState.scene.add(this.rainStreaks);
+                this.streakMax = maxStreaks;
+                this.streakCount = 0;
+
+                this.streakGeometry = new THREE.BufferGeometry();
+                const arr = new Float32Array(this.streakMax * 6);
+                this.streakGeometry.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+                this.streakLines = new THREE.LineSegments(this.streakGeometry, streakMaterial.clone());
+                this.streakLines.frustumCulled = false;
+                AppState.scene.add(this.streakLines);
+
                 // visible rain points
                 const geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
                 geo.setAttribute('size', new THREE.BufferAttribute(this.size, 1));
 
+                // Build an elongated streak texture (soft vertical streak)
                 const canvas = document.createElement('canvas');
-                canvas.width = 16; canvas.height = 48;
-                const ctx = canvas.getContext('2d');
-                const grad = ctx.createLinearGradient(0,0,0,48);
-                grad.addColorStop(0, 'rgba(255,255,255,1)');
-                grad.addColorStop(0.25, 'rgba(200,230,255,0.98)');
-                grad.addColorStop(0.6, 'rgba(140,190,230,0.9)');
-                grad.addColorStop(1, 'rgba(100,150,210,0)');
-                ctx.fillStyle = grad; ctx.fillRect(0,0,16,48);
+                // larger canvas to allow smooth anti-aliased streak with rounded ends
+                canvas.width = 32;
+                canvas.height = 192;
+                const ctx = canvas.getContext('2d', { alpha: true });
+                // ensure strokes/rendering use rounded caps to avoid square dot artifacts
+                try { ctx.lineCap = 'round'; ctx.lineJoin = 'round'; } catch(e){}
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+                // draw a soft narrow rounded rectangle as base streak
+                const streakW = canvas.width * 0.18;
+                const x = (canvas.width - streakW) * 0.5;
+                const y = 0;
+                const h = canvas.height;
+                const r = streakW * 0.6; // rounded ends
+
+                ctx.save();
+                // vertical gradient for smooth fade
+                const grad = ctx.createLinearGradient(0, y, 0, y + h);
+                grad.addColorStop(0.0, 'rgba(255,255,255,0.98)');
+                grad.addColorStop(0.12, 'rgba(220,240,255,0.9)');
+                grad.addColorStop(0.38, 'rgba(170,210,235,0.7)');
+                grad.addColorStop(0.82, 'rgba(120,170,210,0.28)');
+                grad.addColorStop(1.0, 'rgba(120,170,210,0.0)');
+                ctx.fillStyle = grad;
+
+                // rounded rect path
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + streakW - r, y);
+                ctx.quadraticCurveTo(x + streakW, y, x + streakW, y + r);
+                ctx.lineTo(x + streakW, y + h - r);
+                ctx.quadraticCurveTo(x + streakW, y + h, x + streakW - r, y + h);
+                ctx.lineTo(x + r, y + h);
+                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+                ctx.fill();
+
+                // Add subtle longitudinal soft streaks (lighter blending) to imply shear without square artifacts
+                ctx.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 6; i++) {
+                    const g = ctx.createLinearGradient(x - 2 + i * 2, 0, x + streakW + 2 + i * 2, canvas.height);
+                    const alpha = 0.015 + Math.random() * 0.03;
+                    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                    g.addColorStop(0.5, `rgba(255,255,255,${alpha * 0.6})`);
+                    g.addColorStop(1, `rgba(255,255,255,0)`);
+                    ctx.fillStyle = g;
+                    ctx.fillRect(x - 6 + i * 1.8, 0, streakW + 12, canvas.height);
+                }
+
+                // gentle blur pass using shadow to soften edges (cheap approximation)
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = 'rgba(255,255,255,0.02)';
+                ctx.shadowColor = 'rgba(170,200,230,0.35)';
+                ctx.shadowBlur = 6;
+                ctx.fillRect(x, y, streakW, canvas.height);
+                ctx.restore();
+
+                const streakTex = new THREE.CanvasTexture(canvas);
+                streakTex.format = THREE.RGBAFormat;
+                streakTex.needsUpdate = true;
+
+                // Use Points material but configured for elongated streak sprites with sizeAttenuation,
+                // higher base opacity and additive blending for heavier, realistic streaks.
                 this.material = new THREE.PointsMaterial({
-                    size: 1.1,
-                    map: new THREE.CanvasTexture(canvas),
+                    size: 1.6,
+                    map: streakTex,
                     transparent: true,
-                    opacity: 0.98,
+                    opacity: 0.88,
                     depthWrite: false,
                     blending: THREE.AdditiveBlending,
                     vertexColors: false,
-                    sizeAttenuation: true
+                    sizeAttenuation: true,
+                    alphaTest: 0.02
                 });
 
                 this.rain = new THREE.Points(geo, this.material);
                 AppState.scene.add(this.rain);
+                // Keep points visible as streak sprites; size will be modulated by drop size at runtime.
 
-                // streaks for fast drops
+                // create a larger, more visible streak system and de-emphasize point sprites
+                this.streakMax = 1200; // increased streak capacity for longer continuous streaks
                 this.createStreakSystem();
 
                 // microphysics tuning (adjusted for heavier precipitation)
@@ -2514,6 +2944,10 @@
                     splashParticles: 26,      // more splashes for heavier impacts
                     evaporationRate: 0.0007   // slight reduction so drops survive longer
                 };
+                // make the system more aggressive for realistic heavy precipitation visuals
+                this.params.coalesceProb *= 1.9; // more coalescence -> larger drops
+                this.params.splashParticles = Math.min(80, Math.floor(this.params.splashParticles * 1.6));
+                this.params.evaporationRate *= 0.72; // slower evaporation yields heavier rain to ground
 
                 // temporary working arrays for spawn loops
                 this._spawnScratch = { idxList: [] };
@@ -2523,11 +2957,19 @@
             }
 
             createStreakSystem() {
+                // allocate a larger line segments buffer for long rain streaks
                 this.streakGeometry = new THREE.BufferGeometry();
-                const arr = new Float32Array(400 * 6);
+                const arr = new Float32Array(this.streakMax * 6); // each streak uses two points (start/end)
                 this.streakGeometry.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-                this.streakMaterial = new THREE.LineBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.36 });
+                // Use a thin semi-transparent line for bulk streaks but pair with sprite streaks for volume
+                this.streakMaterial = new THREE.LineBasicMaterial({
+                    color: new THREE.Color(0x9fd8ff),
+                    transparent: true,
+                    opacity: 0.42,
+                    linewidth: 1
+                });
                 this.streakLines = new THREE.LineSegments(this.streakGeometry, this.streakMaterial);
+                this.streakLines.frustumCulled = false;
                 AppState.scene.add(this.streakLines);
             }
 
@@ -2679,10 +3121,27 @@
                         const idx = i * 3;
                         // position within cloud footprint with small jitter
                         const angle = Math.random() * Math.PI * 2;
-                        const r = Math.random() * Math.max(4, cloud.radius * (0.8 + Math.random()*0.9));
+                        // scale sampling radius by cloud footprint, horizontal spread, width factor and mass so precipitation area follows cloud structure
+                        const footprint = Math.max(3.6, (cloud.radius || 6) * (cloud.horizontalSpread || 1.0) * (cloud.widthFactor || 1.0));
+                        const r = Math.random() * (footprint * (0.8 + Math.random()*0.9)) * (1 + Math.min(1.8, (cloud.mass||0)/6));
                         const cx = cloud.x + Math.cos(angle) * r + (Math.random()-0.5)*0.6;
                         const cz = cloud.z + Math.sin(angle) * r + (Math.random()-0.5)*0.6;
-                        const startH = Math.max(1, (cloud.height || 18) - (0.2 + Math.random()*1.2));
+                        // default start height near cloud height
+                        let startH = Math.max(1, (cloud.height || 18) - (0.2 + Math.random()*1.2));
+                        
+                        // Detect mid/high-level cloud types and bias to produce virga:
+                        // altocumulus / altostratus and cirrus families spawn higher, smaller drops with lower quality
+                        const variant = cloud.variant || cloud.stage || '';
+                        const isAlto = /alto/i.test(variant) || /altocumulus|altostratus/i.test(variant) || (variant === 'altocumulus' || variant === 'altostratus');
+                        const isCirrus = /cirr/i.test(variant) || variant.startsWith('cirrus');
+                        if (isAlto) {
+                            // altocumulus/altostratus: mid-level precipitation that often evaporates below
+                            startH = (cloud.height || 26) + 6 + Math.random() * 6; // spawn noticeably higher
+                        } else if (isCirrus) {
+                            // cirrus-family: very high and thin fallstreaks -> virga almost always
+                            startH = (cloud.height || 34) + 8 + Math.random() * 12;
+                        }
+
                         this.pos[idx] = cx;
                         this.pos[idx+1] = startH + (Math.random()-0.5) * 0.5;
                         this.pos[idx+2] = cz;
@@ -2692,17 +3151,24 @@
                         this.type[i] = ptype;
 
                         // quality: droplet concentration or snowflake porosity (0.5..1.8)
-                        const quality = 0.6 + Math.random() * 1.4 + Math.min(1.0, cloud.condensationLevel || 0);
+                        // for alto/cirrus make quality lower so evaporation is more likely
+                        let quality = 0.6 + Math.random() * 1.4 + Math.min(1.0, cloud.condensationLevel || 0);
+                        if (isAlto) quality *= 0.62; // drier/smaller drops
+                        if (isCirrus) quality *= 0.45; // very low-density fallstreaks
                         this.quality[i] = quality;
 
                         // size scales with cloud mass, condensation, and stage (boosted for heavier precipitation)
                         const massFactor = Math.max(0.7, Math.min(3.6, 0.7 + (cloud.mass || 0) * 0.14));
                         const condFactor = 0.9 + (cloud.condensationLevel || 0) * 1.25;
                         let s = 1.2 * massFactor * condFactor * (stageBias * (0.8 + Math.random()*1.0));
+                        // for alto/cirrus reduce visual drop size significantly to favor virga
+                        if (isAlto) s *= 0.42 + Math.random()*0.32;
+                        if (isCirrus) s *= 0.22 + Math.random()*0.28;
+
                         // modify by type (snowflakes often larger visual but slower)
                         let fallSpeed;
                         if (ptype === 'snow') {
-                            s *= 1.3 + Math.random()*1.8;
+                            s *= 1.2 + Math.random()*1.4;
                             fallSpeed = (0.04 + (s / 5) * 0.06) * (1 + Math.random()*0.45);
                         } else if (ptype === 'sleet') {
                             s *= 1.0 + Math.random()*1.1;
@@ -2712,10 +3178,16 @@
                             fallSpeed = (0.18 + (s / 4) * 0.26) * (1 + Math.random()*0.45);
                         } else {
                             // rain
-                            s *= 1.1 + Math.random()*3.2;
-                            fallSpeed = (0.32 + (s / 4) * 0.66) * (1 + Math.random()*0.45);
-                            fallSpeed *= this.params.globalSlowFactor; // apply global tuning
+                            // make rain visually heavier & more physical: larger drops and faster terminal velocities
+                            s *= 2.0 * (1.1 + Math.random()*2.4); // doubled baseline size
+                            // more realistic fall-speed scaling (approximate terminal velocity scaling)
+                            fallSpeed = (0.45 + (s / 3.5) * 0.9) * (0.9 + Math.random()*0.36);
+                            fallSpeed *= Math.max(0.6, this.params.globalSlowFactor * 0.95);
                         }
+
+                        // For alto/cirrus lower fall speeds (small particles) to increase chance of evaporation
+                        if (isAlto) fallSpeed *= 0.62;
+                        if (isCirrus) fallSpeed *= 0.38;
 
                         // set properties
                         this.size[i] = Math.max(0.14, s * (0.22 + Math.min(0.7, stageBias*0.16)));
@@ -2808,6 +3280,49 @@
                 // avoid frustum culling so shafts near camera update reliably
                 points.frustumCulled = false;
                 return points;
+            }
+
+            // Enhanced fluid dynamics for rain drops
+            computeFluidDynamics(i, dt) {
+                const idx = i * 3;
+                const v = this.vel[i];
+                const y = this.pos[idx + 1];
+                const size = this.size[i];
+                
+                // Compute Reynolds number-like parameter for realistic drag
+                const terminalVelRef = 0.3 + Math.sqrt(size) * 0.2; // reference terminal velocity
+                const currentFallSpeed = Math.sqrt(v.y * v.y); // current fall speed
+                
+                // Fluid drag: dv/dt = -0.5 * rho_air * Cd * A * v^2 / m
+                // Simplified: drag increases with relative velocity
+                const dragMult = 1.0;
+                const dragCoeff = this.dragCoeff[i] || 0.47; // sphere drag coefficient default
+                const refArea = size * size; // cross-sectional area proportional to size^2
+                const airDensity = Math.max(0.1, 1.225 * Math.exp(-y / 8.0)); // air density decreases with altitude
+                
+                // Compute drag acceleration based on fluid dynamics
+                const dragAccel = (0.5 * airDensity * dragCoeff * refArea * (v.y * v.y)) / Math.max(0.1, size * size); // normalize by mass
+                v.y = Math.max(0.04, v.y - dragAccel * dt * 0.02); // apply drag, maintain minimum fall speed
+                
+                // Wind resistance (horizontal drag)
+                const windDrag = 0.98 * (1 - dragAccel * 0.0001); // wind also experiences drag
+                v.vx *= windDrag;
+                v.vz *= windDrag;
+                
+                // Pressure gradient forces from wind field (local acceleration)
+                const w = this.windFieldRef.getAt(this.pos[idx], y, this.pos[idx+2]);
+                const pressureGradient = 0.15; // sensitivity to pressure gradients
+                v.vx += (w.x || 0) * pressureGradient * (1.0 / (1 + size)); // smaller drops respond more to wind
+                v.vz += (w.z || 0) * pressureGradient * (1.0 / (1 + size));
+                
+                // Coriolis-like effect (slight deflection based on velocity & altitude)
+                const coriolisFactor = 0.0001 * Math.max(0, (12 - y) / 12); // stronger at low altitude
+                const temp = v.vx;
+                v.vx += v.vz * coriolisFactor;
+                v.vz -= temp * coriolisFactor;
+                
+                // Gravity (always present)
+                v.y += 0.15 * dt; // gravity acceleration (9.81 m/s^2 scaled)
             }
 
             // called each frame
@@ -3032,27 +3547,43 @@
                 }
 
                 // virga: rain that evaporates before reaching ground in dry layers
-                const virgeCount = Math.floor(this.max * 0.008);
-                for (let vi = 0; vi < virgeCount; vi++) {
+                // We now flag virga drops and force them to fade out above ground, spawn light vapor from evaporation,
+                // and prevent ground splashes for these drops.
+                const virgaChecks = Math.max(8, Math.floor(this.max * 0.006));
+                for (let vi = 0; vi < virgaChecks; vi++) {
                     const i = Math.floor(Math.random() * this.max);
                     if (!this.drops[i].active) continue;
                     const y = this.pos[i*3+1];
-                    const env = sampleEnvironment(this.pos[i*3], this.pos[i*3+2], y);
-                    // virga forms in dry air (humidity < 35%) and moderate altitude (3..10 units)
-                    if (env.humidity < 0.35 && y > 3 && y < 10 && this.size[i] < 1.2) {
-                        // rapid evaporation in dry layer
-                        this.size[i] *= (0.55 + Math.random()*0.35);
-                        if (this.size[i] < 0.12) {
+                    const wx = this.pos[i*3], wz = this.pos[i*3+2];
+                    const env = sampleEnvironment(wx, wz, y);
+                    // virga forms in dry air (humidity < ~40%) and moderately high altitudes where evaporation outpaces fall
+                    if (env.humidity < 0.40 && y > 2.6 && y < 14 && this.size[i] < 1.6) {
+                        // mark as virga so downstream logic treats it specially
+                        this.drops[i].virga = true;
+                        // accelerate evaporation / visual fade for virga
+                        const evapFactor = 0.42 + Math.random() * 0.32;
+                        this.size[i] *= evapFactor;
+                        this.life[i] *= 0.88;
+                        // spawn a subtle evaporation plume at that location (if evaporation system exists)
+                        try {
+                            if (AppState.evaporationSystem && typeof AppState.evaporationSystem.spawnEvaporation === 'function') {
+                                // spawn only occasionally to avoid spam
+                                if (Math.random() < 0.24) AppState.evaporationSystem.spawnEvaporation(wx, wz);
+                            }
+                        } catch (e) {}
+                        // when small enough, remove without producing splash
+                        if (this.size[i] < 0.10 || this.life[i] < 0.08) {
                             this.drops[i].active = false;
                             this.pos[i*3+1] = -1000;
                         }
                     }
                 }
 
-                // movement, advection, wind response, environment coupling
+                // movement, advection, wind response, environment coupling with FLUID DYNAMICS
                 let activeCount = 0;
                 let streakIdx = 0;
                 const streakPos = this.streakGeometry.attributes.position.array;
+                const dt = 0.016; // approximate per-frame dt
 
                 for (let i=0;i<this.max;i++) {
                     if (!this.drops[i].active) continue;
@@ -3060,41 +3591,37 @@
                     let y = this.pos[idx+1];
                     const w = this.windFieldRef.getAt(this.pos[idx], y, this.pos[idx+2]) || { x:0, z:0 };
 
-                    // drag & aerodynamics by type & size
+                    // FLUID DYNAMICS: Apply realistic aerodynamic forces
+                    this.computeFluidDynamics(i, dt);
+
+                    // New: drag & aerodynamics by type & size with fluid model
                     let dragMult = 1.0;
                     if (this.type[i] === 'snow') dragMult = 3.4;
                     else if (this.type[i] === 'sleet') dragMult = 2.0;
                     else if (this.type[i] === 'freezing_rain') dragMult = 0.92;
                     else dragMult = 1.1;
 
-                    // wind advection with drag scaling
                     const windInfluence = dragMult * (1.0 / (this.size[i] + 0.08));
                     this.pos[idx] += (w.x * windInfluence) * 1.0 + this.vel[i].vx * 0.36;
                     this.pos[idx+2] += (w.z * windInfluence) * 1.0 + this.vel[i].vz * 0.36;
-
-                    // vertical fall with terminal velocity
                     this.pos[idx+1] -= this.vel[i].y;
 
-                    // updraft/downdraft interaction (read cell markers from wind field)
                     const updraft = (AppState.updraftSystem ? AppState.updraftSystem.getUpdraftAt(this.pos[idx], this.pos[idx+2]) : 0);
                     const windCell = this.windFieldRef.getAt(this.pos[idx], y, this.pos[idx+2]);
                     const downburstSig = windCell && windCell.__downburst ? windCell.__downburst : 0;
-                    const vortexSig = windCell && windCell.__vortex ? windFieldRef && windFieldRef.field ? windCell.__vortex : windCell.__vortex : 0;
+                    const vortexSig = windCell && windCell.__vortex ? windCell.__vortex : 0;
                     if (updraft > 0.02) {
                         this.pos[idx+1] += updraft * (0.04 / (0.5 + this.size[i])) * (0.9 + Math.random()*0.8);
                     }
                     if (downburstSig > 0.002) {
-                        // enhance downward motion in strong downburst
                         this.vel[i].y *= (1 + downburstSig * 0.28);
                     }
                     if (Math.abs(vortexSig) > 0.002) {
-                        // add tangential acceleration from vortex shear
                         const angle = Math.atan2(this.pos[idx+2], this.pos[idx]);
                         this.vel[i].vx += Math.sin(angle + Math.PI/2) * Math.abs(vortexSig) * 0.12;
                         this.vel[i].vz += Math.cos(angle + Math.PI/2) * Math.abs(vortexSig) * 0.12;
                     }
 
-                    // size-dependent evaporation with humidity/temperature coupling
                     const env = sampleEnvironment(this.pos[idx], this.pos[idx+2], y);
                     const tempFactor = 1 - Math.min(1, Math.max(-5, this.getTemperature(y) + 15) / 35);
                     const humidityFactor = Math.max(0, env.humidity - 0.7);
@@ -3106,7 +3633,6 @@
                         continue;
                     }
 
-                    // phase transitions
                     const currentTemp = this.getTemperature(y);
                     if (this.type[i] === 'snow' && currentTemp > 2.8 && y < 6) {
                         this.type[i] = 'rain';
@@ -3116,23 +3642,36 @@
                         this.vel[i].y = Math.max(0.20, this.vel[i].y * 0.68) * this.params.globalSlowFactor;
                     }
 
-                    // streaks (fast large drops)
-                    if (streakIdx < 400 && this.vel[i].y > 0.92 && this.type[i] === 'rain' && this.size[i] > 0.8 && Math.random() < 0.20) {
+                    // REWORKED: Use line segments for rain streaks (no dots)
+                    if (streakIdx < this.streakMax && this.vel[i].y > 0.72 && this.type[i] === 'rain' && this.size[i] > 0.45 && Math.random() < 0.50) {
+                        const trailLen = Math.min(12, 3 + Math.floor(this.size[i] * 1.8 + this.vel[i].y * 6));
                         const si = streakIdx * 6;
-                        streakPos[si] = this.pos[idx];
+                        // start at drop position
+                        streakPos[si]   = this.pos[idx];
                         streakPos[si+1] = y;
                         streakPos[si+2] = this.pos[idx+2];
+                        // draw true downward streak: end point below the drop (short, smoother streak)
                         streakPos[si+3] = this.pos[idx];
-                        streakPos[si+4] = this.pos[idx+1] + Math.min(5, this.size[i] * 0.8); // small trail extension
+                        streakPos[si+4] = this.pos[idx+1] - Math.min(12, trailLen + this.vel[i].y * 6) * 0.45;
                         streakPos[si+5] = this.pos[idx+2];
                         streakIdx++;
                     }
 
                     // ground collision & splashes
                     if (this.pos[idx+1] < 0.6 || this.age[i] > 2000) {
-                        if (this.size[i] > 0.6 && Math.random() < Math.min(0.98, this.size[i]*0.45)) {
-                            // stronger splash for larger drops and higher fall speed
-                            this.createSplash(this.pos[idx], this.pos[idx+2], this.vel[i].y);
+                        // If this drop was flagged as virga, never produce ground splashes and simply remove quietly.
+                        if (!this.drops[i].virga) {
+                            if (this.size[i] > 0.6 && Math.random() < Math.min(0.98, this.size[i]*0.45)) {
+                                // stronger splash for larger drops and higher fall speed
+                                this.createSplash(this.pos[idx], this.pos[idx+2], this.vel[i].y);
+                            }
+                        } else {
+                            // optional light evaporation puff on final fade for virga (very rare)
+                            try {
+                                if (AppState.evaporationSystem && Math.random() < 0.12) {
+                                    AppState.evaporationSystem.spawnEvaporation(this.pos[idx], this.pos[idx+2]);
+                                }
+                            } catch(e) {}
                         }
                         this.drops[i].active = false;
                         this.pos[idx] = 0; this.pos[idx+1] = -1000; this.pos[idx+2] = 0;
@@ -3147,7 +3686,8 @@
                 }
 
                 // clear unused streak slots
-                for (let k = streakIdx*6; k < 400*6; k++) streakPos[k] = 0;
+                for (let k = streakIdx*6; k < this.streakMax*6; k++) streakPos[k] = 0;
+                this.streakGeometry.attributes.position.needsUpdate = true;
 
                 // animate & cleanup splash particles
                 if (this._splashPool && this._splashPool.length) {
@@ -3590,6 +4130,26 @@
                     // notify trees of impulse for visual coupling
                     if (AppState.treeSystem) AppState.treeSystem.applyImpulse(x, z, 8 + intensity * 4, 36 + intensity * 6);
                 }
+
+                // Ignite nearby trees: set onFire flag for trees within radius proportional to intensity
+                try {
+                    if (AppState.treeSystem && AppState.treeSystem.trees) {
+                        const igniteRadius = Math.max(6, 6 + intensity * 6);
+                        for (const tr of AppState.treeSystem.trees) {
+                            const d = Math.hypot(tr.position.x - x, tr.position.z - z);
+                            if (d < igniteRadius && Math.random() < Math.min(0.9, 0.25 + (igniteRadius - d) / igniteRadius * 0.85)) {
+                                tr.userData.onFire = true;
+                                tr.userData.fireTime = 160 + Math.floor(Math.random() * 160);
+                                // make canopy hotter immediately
+                                const canopy = tr.userData.canopy || tr.children.find(c => c.geometry === AppState.treeSystem.leafGeo);
+                                if (canopy && canopy.material) {
+                                    canopy.material.color.lerp(new THREE.Color(0xde5b22), 0.45);
+                                    canopy.material.emissive = new THREE.Color(0x441100);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
             }
 
             update(t) {
@@ -3629,11 +4189,17 @@
 
                 // global charge is aggregated absolute reservoir (mimics region-wide potential)
                 // reduce scaling so totalCharge must accumulate longer to reach threshold
-                this.charge = Math.max(0, Math.min(1000, totalCharge * 3.0));
+                // apply UI charge multiplier for faster/slower accumulation
+                const mult = (typeof Graphics !== 'undefined' ? (Graphics.chargeMultiplier || 1.0) : 1.0);
+                this.charge = Math.max(0, Math.min(1000, totalCharge * 3.0 * Number(mult)));
 
-                // Attempt discharge if threshold exceeded and mature convection present
+                // compute a readable charge percentage relative to the threshold (used for triggering and UI)
+                // percent = (charge / threshold) * 100, clamped to reasonable range
+                this.chargePercent = Math.max(0, Math.min(999, Math.floor((this.charge / Math.max(1, this.threshold)) * 100)));
+
+                // Attempt discharge if threshold exceeded (either absolute charge or percent >=100) and mature convection present
                 // NOTE: cooldown requirement reduced so strikes can happen as soon as charge condition meets threshold
-                if (this.charge > this.threshold && mature.length > 0) {
+                if ((this.charge > this.threshold || this.chargePercent >= 100) && mature.length > 0) {
                     // choose a cloud with high local charge to strike from
                     let sourceCloud = null;
                     let bestCharge = 0;
@@ -3798,7 +4364,7 @@
                 const sunBehind = this.sunDir.dot(camVec) < -0.2;
 
                 // spawn or update arcs if moisture is sufficient and sun is behind
-                if (moistureScore > 0.18 && sunBehind) {
+                if (moistureScore > 0.12 && sunBehind) {
                     // build 1 or 2 arcs based on intensity
                     const arcCount = moistureScore > 0.6 ? 2 : 1;
                     // reuse or create arcs
@@ -3819,9 +4385,10 @@
                         arc.position.copy(center);
                         arc.lookAt(AppState.camera.position);
                         arc.scale.setScalar(1.0 + i * 0.18);
-                        arc.material.opacity = Math.min(0.95, (0.22 + moistureScore * 0.85) * (1.0 - i * 0.35) );
-                        // slight pulsation
+                        arc.material.opacity = Math.min(0.95, (0.12 + moistureScore * 0.88) * (1.0 - i * 0.35) );
+                        // slight pulsation & chromatic dispersion emulation
                         arc.rotation.z = Math.sin(t * 0.0007 + i) * 0.02;
+                        arc.material.needsUpdate = true;
                     }
                 } else {
                     // fade out arcs
@@ -3881,6 +4448,202 @@
                 mesh.renderOrder = 1000;
                 return mesh;
             }
+        }
+
+        // Radar overlay (2D screen-space) - simple precipitation intensity map derived from precipitation particles
+        class RadarOverlay {
+            constructor() {
+                this.enabled = true;
+                this.canvas = document.createElement('canvas');
+                this.canvas.style.position = 'absolute';
+                this.canvas.style.left = '50%';
+                this.canvas.style.top = '12px';
+                this.canvas.style.transform = 'translateX(-50%)';
+                this.canvas.style.width = '420px';
+                this.canvas.style.height = '120px';
+                this.canvas.width = 420;
+                this.canvas.height = 120;
+                this.canvas.style.zIndex = 200;
+                this.canvas.style.pointerEvents = 'none';
+                this.ctx = this.canvas.getContext('2d');
+                document.body.appendChild(this.canvas);
+                this.fade = 0.87;
+            }
+            update() {
+                if (!this.enabled) {
+                    this.canvas.style.display = 'none';
+                    return;
+                }
+                this.canvas.style.display = 'block';
+                const ctx = this.ctx;
+                ctx.fillStyle = 'rgba(8,8,14,0.12)';
+                ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+                // grid
+                ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+                for (let i=1;i<6;i++){ ctx.beginPath(); ctx.moveTo(i*(this.canvas.width/6),0); ctx.lineTo(i*(this.canvas.width/6),this.canvas.height); ctx.stroke(); }
+                // sample precipitation density from rainSystem drops and shafts to build heatmap
+                const map = new Float32Array(this.canvas.width * this.canvas.height);
+                if (AppState.rainSystem) {
+                    for (let i=0;i<AppState.rainSystem.max;i++) {
+                        if (!AppState.rainSystem.drops[i].active) continue;
+                        const x = AppState.rainSystem.pos[i*3];
+                        const z = AppState.rainSystem.pos[i*3+2];
+                        // project world x,z to radar coords (center map on camera)
+                        const relX = Math.floor((x - AppState.camera.position.x) / 2 + this.canvas.width/2);
+                        const relY = Math.floor((z - AppState.camera.position.z) / 2 + this.canvas.height/2);
+                        if (relX < 0 || relX >= this.canvas.width || relY < 0 || relY >= this.canvas.height) continue;
+                        const idx = relY * this.canvas.width + relX;
+                        map[idx] = Math.min(1, map[idx] + Math.min(1, AppState.rainSystem.size[i] * 0.18));
+                    }
+                    // also sample shafts
+                    for (const [c, shaft] of AppState.rainSystem.cloudShafts) {
+                        if (!c) continue;
+                        const rx = Math.floor((c.x - AppState.camera.position.x) / 2 + this.canvas.width/2);
+                        const ry = Math.floor((c.z - AppState.camera.position.z) / 2 + this.canvas.height/2);
+                        for (let oy=-6; oy<=6; oy++) {
+                            for (let ox=-6; ox<=6; ox++) {
+                                const sx = rx + ox; const sy = ry + oy;
+                                if (sx<0||sx>=this.canvas.width||sy<0||sy>=this.canvas.height) continue;
+                                const id = sy*this.canvas.width+sx;
+                                map[id] = Math.min(1, map[id] + (shaft.userData && shaft.userData.intensity? shaft.userData.intensity*0.45 : 0.35));
+                            }
+                        }
+                    }
+                }
+                // draw heatmap with color ramp
+                for (let y=0;y<this.canvas.height;y++) {
+                    for (let x=0;x<this.canvas.width;x++) {
+                        const v = map[y*this.canvas.width + x] || 0;
+                        if (v < 0.02) continue;
+                        // color ramp: green -> yellow -> red -> magenta
+                        let col;
+                        if (v < 0.35) col = `rgba(${Math.floor(80+v*140)},${Math.floor(180*v*1.2+60)},50,${Math.min(0.9,v)})`;
+                        else if (v < 0.7) col = `rgba(230,${Math.floor(180*(1-(v-0.35)/0.35))},40,${Math.min(0.95,v)})`;
+                        else col = `rgba(240,80,${Math.floor(200*(v-0.7)/0.3)},${Math.min(1.0,v)})`;
+                        ctx.fillStyle = col;
+                        ctx.fillRect(x,y,1,1);
+                    }
+                }
+                // overlay legend
+                ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                ctx.font = '11px Noto Sans, sans-serif';
+                ctx.fillText('Radar (precip intensity)', 8, 12);
+            }
+            dispose() {
+                this.canvas.remove();
+            }
+        }
+
+        // Volcano & Industrial emitters produce smoke/pyro cloud seeds (pyrocumulus)
+        class SourceEmitter {
+            constructor(type='factory', x=60, z=-40) {
+                this.type = type;
+                this.x = x; this.z = z;
+                this.group = new THREE.Group();
+                AppState.scene.add(this.group);
+                this.timer = 0;
+                this.puffs = [];
+                // visual marker (small building/volcano)
+                if (type === 'volcano') {
+                    const geo = new THREE.ConeGeometry(6, 8, 12);
+                    const mat = new THREE.MeshStandardMaterial({ color: 0x442a1a, roughness: 0.9 });
+                    const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, z);
+                    this.group.add(m);
+                } else {
+                    const box = new THREE.BoxGeometry(6,4,6);
+                    const mat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a });
+                    const b = new THREE.Mesh(box, mat); b.position.set(x,2,z);
+                    this.group.add(b);
+                }
+            }
+            update(t) {
+                this.timer++;
+                // occasionally emit a strong thermal plume for volcanos / factory cooling stacks
+                if (this.timer % (this.type==='volcano'? 28 : 80) === 0) {
+                    const strength = this.type==='volcano' ? (1.6 + Math.random()*1.8) : (0.5 + Math.random()*0.9);
+                    const r = new THREE.Group();
+                    const puff = AppState.cloudSystem.makePuff(this.x, 6 + (this.type==='volcano'? Math.random()*6 : 2.5), this.z, 6 + Math.random()*5, 0.1 + Math.random()*0.18, 0.6, 'cumulus');
+                    puff.userData = puff.userData || {};
+                    puff.userData.updraftClone = true;
+                    puff.userData.vy = 0.03 + strength*0.02;
+                    puff.userData.spreadSpeed = 0.02 + Math.random()*0.02;
+                    puff.userData.maxRise = 10 + (this.type==='volcano'? 18 : 8) + Math.random()*6;
+                    r.add(puff);
+                    this.group.add(r);
+                    AppState.cloudSystem.updrafts.push({ x: this.x, z: this.z, strength: strength, radius: 30 + Math.random()*40, age:0, maxAge: 220 });
+                    // provide a chance to spawn pyro cloud formation: convert to pyrocumulus variant
+                    if (Math.random() < (this.type==='volcano'? 0.45 : 0.12)) {
+                        const c = AppState.cloudSystem.grow(this.x + (Math.random()-0.5)*6, this.z + (Math.random()-0.5)*6);
+                        if (c) {
+                            c.baseHeight = 8;
+                            c.mass += 2.2;
+                            c.condensationLevel = Math.min(1, c.condensationLevel + 0.4);
+                            c.stage = 'pyrocumulus';
+                            // darken puffs to convey smoke
+                            c.puffs.forEach(p => { if (p.material) { p.material.color.setRGB(0.45,0.45,0.5); p.material.opacity *= 0.88; } });
+                        }
+                    }
+                    // brief ember particles for volcano
+                    if (this.type === 'volcano' && Math.random() < 0.6) {
+                        const egeo = new THREE.BufferGeometry();
+                        const cnt = 18;
+                        const arr = new Float32Array(cnt*3);
+                        for (let i=0;i<cnt;i++) {
+                            arr[i*3] = this.x + (Math.random()-0.5)*4;
+                            arr[i*3+1] = 2 + Math.random()*6;
+                            arr[i*3+2] = this.z + (Math.random()-0.5)*4;
+                        }
+                        egeo.setAttribute('position', new THREE.BufferAttribute(arr,3));
+                        const emat = new THREE.PointsMaterial({ size:0.28, color:0xff8a33, transparent:true, opacity:0.9 });
+                        const emb = new THREE.Points(egeo, emat);
+                        emb.userData = { life: 0.8 + Math.random()*0.6 };
+                        AppState.scene.add(emb);
+                        (this._embers = this._embers||[]).push(emb);
+                    }
+                }
+                // update ember lifetimes
+                if (this._embers) {
+                    for (let i=this._embers.length-1;i>=0;i--) {
+                        const eb = this._embers[i];
+                        eb.userData.life -= 0.01;
+                        eb.material.opacity *= 0.97;
+                        eb.position.y += 0.02;
+                        if (eb.userData.life <= 0) {
+                            AppState.scene.remove(eb);
+                            if (eb.geometry) eb.geometry.dispose();
+                            if (eb.material) eb.material.dispose();
+                            this._embers.splice(i,1);
+                        }
+                    }
+                }
+            }
+            dispose() {
+                this.group.traverse(o=>{ if (o.geometry) try{o.geometry.dispose();}catch(e){} if (o.material) try{o.material.dispose();}catch(e){} });
+                try{ AppState.scene.remove(this.group); }catch(e){}
+            }
+        }
+
+        // Improved sunlight scattering: small volumetric tint and aerosols applied in sun effects update (cheap approximation)
+        function applySunScattering() {
+            if (!AppState._sunGlare || !AppState._godrays) return;
+            // compute scattering based on sun elevation and greenhouse/aerosol proxy
+            const sun = AppState.scene.children.find(o => o && o.isDirectionalLight);
+            if (!sun) return;
+            const elevation = Math.max(-1, Math.min(1, sun.position.y / 80));
+            // aerosol derived from greenhouse slider (more greenhouse -> slightly hazier)
+            const a = Math.min(1, 0.08 + (Graphics.greenhouse || 0) * 0.02);
+            // adjust godray intensity and color temperature slightly
+            const base = 0.12 + Math.max(0, -Math.min(0, elevation))*0.28;
+            AppState._godrays.material.color.setHSL(0.12 + (1-elevation)*0.03, 0.6, 0.64);
+            AppState._godrays.userData.baseOpacity = Math.min(0.45, base * (1 + a));
+            // scene fog tint shift for golden hours
+            const day = window.DayNight ? window.DayNight.dayStrength : 1;
+            const warm = new THREE.Color().setHSL(0.09, 0.36, 0.7);
+            const cool = new THREE.Color().setHSL(0.55,0.25,0.45);
+            AppState.scene.fog.color.copy(cool).lerp(warm, Math.max(0, day * elevation));
+            // small ambient color bias
+            const amb = AppState.scene.getObjectByProperty && AppState.scene.children.find(o=>o && o.type==='AmbientLight');
+            if (amb) amb.color.copy(new THREE.Color(0x99aabb)).lerp(new THREE.Color(0xffe6c8), Math.max(0, elevation*0.8));
         }
 
         // Downburst system: creates short-lived strong downward/outward winds under intense mature clouds
@@ -4140,6 +4903,172 @@
             }
         }
 
+        // NEW: Birds flocking system (lightweight boids)
+        class Birds {
+            constructor(count = 28) {
+                this.group = new THREE.Group();
+                this.birds = [];
+                this.count = count;
+                this.target = new THREE.Vector3(0, 18, 0);
+                const geo = new THREE.PlaneGeometry(0.8, 0.5);
+                for (let i = 0; i < count; i++) {
+                    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.08 + Math.random()*0.12,0.7,0.55), side: THREE.DoubleSide });
+                    const m = new THREE.Mesh(geo, mat);
+                    m.position.set((Math.random()-0.5)*150, 12 + Math.random()*18, (Math.random()-0.5)*150);
+                    m.userData = { vel: new THREE.Vector3((Math.random()-0.5)*0.14, (Math.random()-0.2)*0.02, (Math.random()-0.5)*0.14) };
+                    m.rotation.y = Math.random()*Math.PI*2;
+                    this.birds.push(m);
+                    this.group.add(m);
+                }
+                this.group.frustumCulled = false;
+                AppState.scene.add(this.group);
+            }
+            update(dt) {
+                const tgt = this.target;
+                for (let b of this.birds) {
+                    const v = b.userData.vel;
+                    // simple cohesion toward center + separation from high wind cells
+                    const toTarget = new THREE.Vector3(tgt.x - b.position.x, tgt.y - b.position.y, tgt.z - b.position.z).multiplyScalar(0.0015);
+                    v.add(toTarget);
+                    // sample local wind, gently steer
+                    const w = AppState.windField ? AppState.windField.getAt(b.position.x, Math.max(1, b.position.y), b.position.z) : {x:0,z:0};
+                    v.x += (w.x || 0) * 0.02;
+                    v.z += (w.z || 0) * 0.02;
+                    // clamp
+                    v.x = Math.max(-0.6, Math.min(0.6, v.x));
+                    v.y = Math.max(-0.2, Math.min(0.2, v.y));
+                    v.z = Math.max(-0.6, Math.min(0.6, v.z));
+                    b.position.addScaledVector(v, dt * 0.06);
+                    // simple banking/rotation
+                    b.lookAt(b.position.x + v.x*8, b.position.y + v.y*6, b.position.z + v.z*8);
+                }
+            }
+            dispose() {
+                this.group.traverse(o=>{ if (o.geometry) try{o.geometry.dispose();}catch(e){} if (o.material) try{o.material.dispose();}catch(e){} });
+                try{ AppState.scene.remove(this.group); }catch(e){}
+            }
+        }
+
+        // NEW: RainFog system — low, screen-space/faux volumetric fog that increases with precipitation intensity
+        class RainFog {
+            constructor() {
+                this.group = new THREE.Group();
+                this.domes = []; // active fog domes
+                this.maxDomes = 6;
+                this.t = 0;
+                AppState.scene.add(this.group);
+            }
+
+            sampleIntensity() {
+                // approximate precipitation intensity by sampling rainSystem active drops
+                if (!AppState.rainSystem) return 0;
+                let active = 0;
+                const max = AppState.rainSystem.max || 2500;
+                for (let i = 0; i < Math.min(800, max); i += 12) {
+                    if (AppState.rainSystem.drops && AppState.rainSystem.drops[i] && AppState.rainSystem.drops[i].active) active++;
+                }
+                return Math.min(1, active / 10); // normalize to 0..1
+            }
+
+            update(t) {
+                this.t = t;
+                if (!Graphics.rainFog) {
+                    // fade out domes
+                    for (const d of this.domes) {
+                        if (d.material) d.material.opacity *= 0.88;
+                    }
+                    this.domes = this.domes.filter(d => !d.material || d.material.opacity > 0.01);
+                    return;
+                }
+
+                const intensity = this.sampleIntensity();
+                const sources = (AppState.cloudSystem && AppState.cloudSystem.getPrecipSources) ? AppState.cloudSystem.getPrecipSources() : (AppState.cloudSystem ? AppState.cloudSystem.getMature() : []);
+                
+                // maintain domes over active precipitation areas
+                const desiredDomes = Math.max(0, Math.floor(this.maxDomes * Math.min(1, intensity * 1.8)));
+                
+                // remove excess domes
+                while (this.domes.length > desiredDomes) {
+                    const old = this.domes.pop();
+                    if (old && old.parent) this.group.remove(old);
+                    if (old && old.geometry) old.geometry.dispose();
+                    if (old && old.material) old.material.dispose();
+                }
+
+                // update or create domes
+                for (let i = 0; i < desiredDomes; i++) {
+                    let dome = this.domes[i];
+                    if (!dome && sources.length > 0) {
+                        dome = this._createDome();
+                        this.domes[i] = dome;
+                        this.group.add(dome);
+                    }
+                    
+                    if (dome && sources.length > i) {
+                        const source = sources[i];
+                        // position dome at rain source
+                        dome.position.set(source.x, 1.2, source.z);
+                        
+                        // scale dome radius to cloud footprint
+                        const radius = Math.max(8, (source.radius || 6) * (source.horizontalSpread || 1.0) * 1.6);
+                        dome.scale.set(radius / 10, 3.5, radius / 10); // dome height ~ 3-4 units, scaled horizontally
+                        
+                        // opacity based on local intensity and condensation level
+                        const local = Math.min(1, intensity * (source.condensationLevel || 0.5) * (Graphics.rainIntensity || 1.0) * 1.8);
+                        dome.material.opacity = Math.min(0.92, 0.04 + local * 0.65);
+                        
+                        // gentle animation: bobbing and breathing
+                        dome.position.y += Math.sin(t * 0.0005 + i) * 0.2;
+                        dome.scale.y *= 0.98 + Math.sin(t * 0.0004 + i * 0.5) * 0.06;
+                    }
+                }
+            }
+
+            _createDome() {
+                // Create a hemispherical mesh (dome shape) that will cover the rain area
+                const geoSphere = new THREE.IcosahedronGeometry(10, 3);
+                // keep only top hemisphere by filtering vertices
+                const posAttr = geoSphere.attributes.position;
+                const positions = posAttr.array;
+                // cut to hemisphere by setting bottom points to top (creates dome illusion)
+                for (let i = 0; i < positions.length; i += 3) {
+                    if (positions[i + 1] < 0) {
+                        positions[i + 1] = Math.abs(positions[i + 1]); // flip negative Y to positive (dome top)
+                    }
+                }
+                posAttr.needsUpdate = true;
+                geoSphere.computeVertexNormals();
+
+                const mat = new THREE.MeshPhongMaterial({
+                    color: new THREE.Color(0xb8d4e8),
+                    transparent: true,
+                    opacity: 0.0,
+                    depthWrite: false,
+                    blending: THREE.NormalBlending,
+                    side: THREE.DoubleSide,
+                    emissive: new THREE.Color(0x4a6a8a),
+                    emissiveIntensity: 0.08
+                });
+
+                const dome = new THREE.Mesh(geoSphere, mat);
+                dome.castShadow = false;
+                dome.receiveShadow = false;
+                dome.frustumCulled = false;
+                return dome;
+            }
+
+            dispose() {
+                this.domes.forEach(d => {
+                    if (d.geometry) try { d.geometry.dispose(); } catch(e){}
+                    if (d.material) try { d.material.dispose(); } catch(e){}
+                });
+                try { this.group.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                }); this.group.parent.remove(this.group); } catch(e){}
+            }
+        }
+
         // Tornado system: attaches to supercell clouds and injects strong rotating inflow/outflow winds
         class TornadoSystem {
             constructor(windFieldRef, cloudSystemRef) {
@@ -4152,81 +5081,49 @@
             }
 
             spawnFromCloud(cloud) {
-                // ensure tornadoes only spawn from robust supercells with strong vertical structure and mature updrafts
+                // simplified and safer spawning: require strong supercell but reduce particle load and make vortex leaner
                 if (!cloud || cloud.stage !== 'supercell' || cloud.dying) return;
-                // require significant vertical extent and a pronounced base/top separation and mass
+                // require significant vertical extent and mass
                 const cloudVerticalExtent = Math.max(0, (cloud.cloudTop || cloud.height) - (cloud.cloudBase || (cloud.height - 8)));
-                if (cloudVerticalExtent < 16 || cloud.mass < 7.5 || cloud.condensationLevel < 0.6) return;
+                if (cloudVerticalExtent < 12 || cloud.mass < 6.5 || cloud.condensationLevel < 0.5) return;
 
                 const existing = this.tornadoes.find(t => t.cloud === cloud);
                 if (existing) return;
 
-                // make tornados fewer but stronger and longer-lived
-                const baseRadius = 3.5 + Math.random() * 3.0;
-                const topRadius = 0.6 + Math.random() * 0.6;
-                const height = Math.max(20, cloud.cloudTop - cloud.cloudBase + 6);
-                const segs = 20;
+                const baseRadius = 2.5 + Math.random() * 3.0;
+                const height = Math.max(18, cloud.cloudTop - cloud.cloudBase + 4);
 
-                // invisible funnel mesh retained for spatial anchoring (not rendered)
-                const funnelGeo = new THREE.CylinderGeometry(topRadius, baseRadius, height, segs, 1, true);
-                funnelGeo.translate(0, height * 0.5, 0);
-                const funnelMat = new THREE.MeshStandardMaterial({
-                    color: new THREE.Color(0x8690a0),
-                    transparent: true,
-                    opacity: 0.0,
-                    metalness: 0.05,
-                    roughness: 0.85,
-                    side: THREE.DoubleSide,
-                    depthWrite: false
-                });
-                const funnel = new THREE.Mesh(funnelGeo, funnelMat);
-                funnel.castShadow = false;
-                funnel.receiveShadow = false;
-                funnel.visible = false;
-
-                // tighter core light
-                const coreLight = new THREE.PointLight(0x9fd6ff, 0.9, Math.max(28, height * 0.9), 2);
-                coreLight.position.set(0, height * 0.45, 0);
-
-                // reduced but better-organized debris so CPU stays reasonable — particles are taller and spiral coherently
-                const debrisCount = 220; // fewer particles but higher coherence
+                // lightweight spiral particles (fewer, coherent)
+                const debrisCount = 140;
                 const dGeo = new THREE.BufferGeometry();
                 const dPos = new Float32Array(debrisCount * 3);
                 const dVel = new Float32Array(debrisCount * 3);
-                const dPhase = new Float32Array(debrisCount);
                 for (let i = 0; i < debrisCount; i++) {
                     const hFrac = Math.random();
-                    const radialBias = 0.25 + (1 - hFrac) * 0.75;
-                    const r = radialBias * baseRadius * (0.2 + Math.random() * 1.2);
+                    const r = (0.2 + (1 - hFrac) * 0.9) * baseRadius * (0.6 + Math.random() * 1.2);
                     const ang = Math.random() * Math.PI * 2;
                     dPos[i*3] = Math.cos(ang) * r;
                     dPos[i*3+1] = 0.6 + hFrac * height;
                     dPos[i*3+2] = Math.sin(ang) * r;
-                    // tangential velocity larger aloft for a coherent spiral, downward modest
-                    const tangential = 0.03 + (1 - hFrac) * 0.16;
-                    const downward = 0.008 + hFrac * 0.035;
+                    const tangential = 0.02 + (1 - hFrac) * 0.12;
+                    const downward = 0.006 + hFrac * 0.02;
                     dVel[i*3] = -Math.sin(ang) * tangential;
                     dVel[i*3+1] = -downward;
                     dVel[i*3+2] = Math.cos(ang) * tangential;
-                    dPhase[i] = Math.random() * Math.PI * 2;
                 }
                 dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
                 dGeo.setAttribute('velocity', new THREE.BufferAttribute(dVel, 3));
-                dGeo.setAttribute('phase', new THREE.BufferAttribute(dPhase, 1));
                 const dMat = new THREE.PointsMaterial({
-                    size: 0.42,
-                    color: 0x9fd5ff,
+                    size: 0.36,
+                    color: 0x88b8c8,
                     transparent: true,
-                    opacity: 0.9,
+                    opacity: 0.85,
                     depthWrite: false,
                     blending: THREE.AdditiveBlending,
                     sizeAttenuation: true
                 });
                 const debris = new THREE.Points(dGeo, dMat);
-
                 const container = new THREE.Group();
-                container.add(funnel);
-                container.add(coreLight);
                 container.add(debris);
                 container.position.set(cloud.x, 0, cloud.z);
                 this.group.add(container);
@@ -4234,36 +5131,29 @@
                 const tornado = {
                     cloud,
                     obj: container,
-                    funnel,
                     debris,
                     baseRadius,
-                    topRadius,
                     height,
-                    life: 1200 + Math.random() * 1200, // longer-lived
-                    maxLife: 1200 + Math.random() * 1200,
-                    strength: 12 + Math.random() * 14, // stronger influence on wind
-                    spinSign: Math.random() > 0.5 ? 1 : -1,
-                    cohesion: 0.85 + Math.random() * 0.25 // keeps debris organized
+                    life: 900 + Math.random() * 900,
+                    maxLife: 900 + Math.random() * 900,
+                    strength: 9 + Math.random() * 8,
+                    spinSign: Math.random() > 0.5 ? 1 : -1
                 };
-
                 this.tornadoes.push(tornado);
-
-                // meaningful camera shake on tornado birth
-                AppState.cameraControls.shake.intensity = Math.max(AppState.cameraControls.shake.intensity, 1.6);
-                AppState.cameraControls.shake.duration = 1200;
+                // small camera nudge
+                AppState.cameraControls.shake.intensity = Math.max(AppState.cameraControls.shake.intensity, 1.1);
+                AppState.cameraControls.shake.duration = 850;
                 AppState.cameraControls.shake.time = 0;
             }
 
             applyToWind(tornado) {
                 const size = this.windField.size;
                 const spacing = this.windField.spacing;
-                // expand influence radius relative to baseRadius but cap for stability
-                const rMax = Math.min(160, tornado.baseRadius * 5.0);
+                const rMax = Math.min(140, tornado.baseRadius * 5.0);
                 const x0 = tornado.obj.position.x;
                 const z0 = tornado.obj.position.z;
                 const strength = tornado.strength;
 
-                // apply a two-part effect: strong rotational core + moderate inflow/outflow further out
                 for (let gx = 0; gx < size; gx++) {
                     for (let gy = 0; gy < Math.min(size, 10); gy++) {
                         for (let gz = 0; gz < size; gz++) {
@@ -4273,27 +5163,20 @@
                             const dz = wz - z0;
                             const dist = Math.hypot(dx, dz);
                             if (dist > rMax || dist < 0.001) continue;
-
                             const inv = 1 / (dist + 0.0001);
                             const ux = dx * inv;
                             const uz = dz * inv;
                             const tx = -uz;
                             const tz = ux;
-
-                            // core falloff sharper: strong near center, weaker outward
-                            const core = Math.max(0, 1 - (dist / rMax) ** 1.4);
-                            // rotational torque and vertical updraft marker scaled by gy (stronger aloft)
-                            const verticalFactor = 1 + (gy / Math.max(1, Math.min(12, size))) * 1.6;
-                            const inflow = strength * 0.9 * core * 0.9;
-                            const spin = strength * 1.1 * core * tornado.spinSign * (0.8 + tornado.cohesion * 0.4);
-
+                            const core = Math.max(0, 1 - (dist / rMax) ** 1.2);
+                            const verticalFactor = 1 + (gy / Math.max(1, Math.min(12, size))) * 1.2;
+                            const inflow = strength * 0.8 * core;
+                            const spin = strength * 0.9 * core * tornado.spinSign;
                             const cell = this.windField.field[gx][gy][gz];
-                            cell.x += (-ux * inflow + tx * spin) * 0.16 * verticalFactor;
-                            cell.z += (-uz * inflow + tz * spin) * 0.16 * verticalFactor;
-                            // create a stronger upward marker for convective coupling
-                            cell.__updraft = (cell.__updraft || 0) + core * 0.18 * verticalFactor;
-                            // inject vorticity signature for precipitation coupling & visual systems
-                            cell.__vortex = (cell.__vortex || 0) + spin * 0.008 * (1 + (10 - gy) * 0.04);
+                            cell.x += (-ux * inflow + tx * spin) * 0.12 * verticalFactor;
+                            cell.z += (-uz * inflow + tz * spin) * 0.12 * verticalFactor;
+                            cell.__updraft = (cell.__updraft || 0) + core * 0.14 * verticalFactor;
+                            cell.__vortex = (cell.__vortex || 0) + spin * 0.006 * (1 + (10 - gy) * 0.03);
                         }
                     }
                 }
@@ -4301,44 +5184,26 @@
 
             update(t) {
                 if (!this.cloudSystem) return;
-
                 if (this.cooldown > 0) this.cooldown--;
-
-                // look for supercell clouds and occasionally spawn tornadoes
                 if (this.cooldown === 0) {
-                    const candidates = this.cloudSystem.clouds.filter(c => c.stage === 'supercell' && !c.dying && c.mass > 7);
-                    if (candidates.length > 0 && Math.random() < 0.0045) {
+                    const candidates = this.cloudSystem.clouds.filter(c => c.stage === 'supercell' && !c.dying && c.mass > 6.8);
+                    if (candidates.length > 0 && Math.random() < 0.0035) {
                         const c = candidates[Math.floor(Math.random() * candidates.length)];
                         this.spawnFromCloud(c);
-                        this.cooldown = 1400 + Math.floor(Math.random() * 900);
+                        this.cooldown = 1200 + Math.floor(Math.random() * 900);
                     }
                 }
-
                 for (let i = this.tornadoes.length - 1; i >= 0; i--) {
                     const tno = this.tornadoes[i];
                     const cloud = tno.cloud;
-
-                    // follow parent cloud with a tighter leash
                     if (cloud && !cloud.dying) {
                         const targetX = cloud.x;
                         const targetZ = cloud.z;
                         tno.obj.position.x += (targetX - tno.obj.position.x) * 0.08;
                         tno.obj.position.z += (targetZ - tno.obj.position.z) * 0.08;
-                        // smoothly adapt funnel height with cloud base/top
-                        const newHeight = Math.max(18, cloud.cloudBase + 8);
-                        if (Math.abs(newHeight - tno.height) > 0.5) {
-                            tno.height += (newHeight - tno.height) * 0.12;
-                            if (tno.funnel && tno.funnel.geometry && tno.funnel.geometry.parameters) {
-                                // keep funnel geometry but do not reallocate often
-                                // small visual scaling handled via debris positions below
-                            }
-                        }
                     }
-
-                    // spin the container for coherent debris rotation
-                    tno.obj.rotation.y += 0.035 * tno.spinSign;
-
-                    // update debris positions: make spiral tighter and preserve coherence using the cohesion factor
+                    tno.obj.rotation.y += 0.028 * tno.spinSign;
+                    // update debris spiral
                     const posAttr = tno.debris.geometry.attributes.position;
                     const velAttr = tno.debris.geometry.attributes.velocity;
                     const p = posAttr.array;
@@ -4346,71 +5211,91 @@
                     const count = p.length / 3;
                     for (let j = 0; j < count; j++) {
                         const idx = j * 3;
-                        // advance by velocity but damp to keep spiral structure
-                        p[idx]     += v[idx] * (0.98 + Math.random() * 0.04) * (0.9 + (1 - tno.cohesion) * 0.25);
+                        p[idx]     += v[idx] * (0.98 + Math.random() * 0.03);
                         p[idx + 1] += v[idx + 1] * (0.98 + Math.random() * 0.03);
-                        p[idx + 2] += v[idx + 2] * (0.98 + Math.random() * 0.04) * (0.9 + (1 - tno.cohesion) * 0.25);
-
-                        // compute current radius and gently pull toward the coherent spiral radius
+                        p[idx + 2] += v[idx + 2] * (0.98 + Math.random() * 0.03);
                         const r = Math.sqrt(p[idx]*p[idx] + p[idx+2]*p[idx+2]) + 0.0001;
-                        const ang = Math.atan2(p[idx+2], p[idx]) + 0.095 * tno.spinSign * (0.9 + tno.cohesion * 0.18);
-                        const baseR = Math.min(tno.baseRadius * 1.25, r + 0.02 * (1 + tno.cohesion));
-                        // relax radial position toward baseR to reduce spread
-                        p[idx] = Math.cos(ang) * (baseR * (0.85 + 0.15 * Math.random()));
-                        p[idx+2] = Math.sin(ang) * (baseR * (0.85 + 0.15 * Math.random()));
-
-                        // respawn particles that drop below ground
+                        const ang = Math.atan2(p[idx+2], p[idx]) + 0.085 * tno.spinSign;
+                        const baseR = Math.min(tno.baseRadius * 1.3, r + 0.02);
+                        p[idx] = Math.cos(ang) * (baseR * (0.85 + 0.14 * Math.random()));
+                        p[idx+2] = Math.sin(ang) * (baseR * (0.85 + 0.14 * Math.random()));
                         if (p[idx+1] < 0.6) {
-                            const hFrac = Math.random();
-                            const nr = (0.3 + (1 - hFrac) * 0.7) * tno.baseRadius * (0.4 + Math.random() * 0.6);
-                            const nang = Math.random() * Math.PI * 2;
-                            p[idx] = Math.cos(nang) * nr;
-                            p[idx+1] = 0.8 + hFrac * tno.height;
-                            p[idx+2] = Math.sin(nang) * nr;
-                            // refresh velocity to preserve coherent swirl upward
-                            v[idx] = -Math.sin(nang) * (0.03 + Math.random() * 0.12);
-                            v[idx+1] = -(0.008 + Math.random() * 0.04);
-                            v[idx+2] = Math.cos(nang) * (0.03 + Math.random() * 0.12);
+                            p[idx+1] = 0.8 + Math.random() * tno.height;
                         }
                     }
                     posAttr.needsUpdate = true;
-
-                    // apply stronger wind interaction
                     this.applyToWind(tno);
-
-                    // camera shake when close: make pulses more deliberate
-                    const cam = AppState.camera.position;
-                    const dx = cam.x - tno.obj.position.x;
-                    const dz = cam.z - tno.obj.position.z;
-                    const dist = Math.sqrt(dx*dx + dz*dz);
-                    const maxDist = 160;
-                    if (dist < maxDist) {
-                        const proximity = 1 - dist / maxDist; // 0..1
-                        const baseIntensity = 0.3 + proximity * 2.2;
-                        if (Math.random() < 0.16) {
-                            const shake = AppState.cameraControls.shake;
-                            shake.intensity = Math.max(shake.intensity, baseIntensity);
-                            shake.duration = Math.max(shake.duration, 420);
-                            shake.time = 0;
-                        }
-                    }
-
-                    // lifetime decay and fade debris opacity
                     tno.life--;
-                    const lifeFrac = Math.max(0, tno.life / tno.maxLife);
-                    tno.debris.material.opacity = 0.25 + lifeFrac * 0.7;
-
+                    tno.debris.material.opacity = 0.2 + Math.max(0, tno.life / tno.maxLife) * 0.7;
                     if (tno.life <= 0 || (cloud && cloud.dying)) {
                         this.group.remove(tno.obj);
-                        if (tno.funnel) {
-                            try { tno.funnel.geometry.dispose(); } catch(e) {}
-                            try { tno.funnel.material.dispose(); } catch(e) {}
-                        }
-                        try { tno.debris.geometry.dispose(); } catch(e) {}
-                        try { tno.debris.material.dispose(); } catch(e) {}
+                        try { tno.debris.geometry.dispose(); } catch(e){}
+                        try { tno.debris.material.dispose(); } catch(e){}
                         this.tornadoes.splice(i, 1);
                     }
                 }
+            }
+        }
+
+        // ENHANCED ELECTROSTATIC CHARGING with feedback to cloud properties
+        class ElectrostaticSystem {
+            constructor(cloudSystemRef, lightningSystemRef, atmosphereRef) {
+                this.cloudSystem = cloudSystemRef;
+                this.lightningSystem = lightningSystemRef;
+                this.atmosphere = atmosphereRef;
+                this._cloudCharge = new WeakMap();
+                this.cloudCharges = this._cloudCharge;
+                this.chargeHistory = [];
+            }
+            // Triboelectric charging: graupel/hail + ice crystal interactions
+            computeChargeGeneration(cloud, graupelCount) {
+                if (!cloud) return 0;
+                // simplified: charge grows primarily in deep convective cores, scaled by mass and turbulence
+                // increase base charging sensitivity so heavier precipitation produces more charge
+                const base = cloud.mass * (cloud.condensationLevel || 0.3) * 0.08;
+                const turbo = (cloud.turbulence || 0) * 0.6;
+                // tornado proximity amplifies local separation a bit
+                let tornadoBoost = 0;
+                if (AppState.tornadoSystem && AppState.tornadoSystem.tornadoes) {
+                    for (const t of AppState.tornadoSystem.tornadoes) {
+                        if (!t || !t.obj) continue;
+                        const d = Math.hypot(t.obj.position.x - cloud.x, t.obj.position.z - cloud.z);
+                        if (d < 120) tornadoBoost += Math.max(0, 0.18 * (1 - d / 120));
+                    }
+                }
+                const graupelBoost = Math.min(1.2, graupelCount * 0.0006);
+                // stronger sensitivity to graupel and turbulence for robust charge generation
+                const total = base * (1 + turbo * 1.4 + tornadoBoost * 1.2 + graupelBoost * 2.0);
+                return total;
+            }
+            applyChargeEffects(cloud) {
+                if (!cloud) return;
+                const charge = Math.abs(this._cloudCharge.get(cloud) || 0);
+                const chargeInfluence = Math.min(0.35, charge / 130);
+                cloud.buoyancy = (cloud.buoyancy || 0.5) * (1 + chargeInfluence * 0.12);
+                if (charge > 90 && Math.random() < 0.018) {
+                    cloud.condensationLevel = Math.min(1.0, (cloud.condensationLevel || 0.5) + 0.06);
+                }
+            }
+            update(t, precipSystem, graupelCount) {
+                for (const cloud of this.cloudSystem.clouds || []) {
+                    if (!cloud) continue;
+                    // Only deep convective clouds accumulate strongly
+                    if (cloud.stage !== 'cumulonimbus' && cloud.stage !== 'supercell') {
+                        const prevZero = this._cloudCharge.get(cloud) || 0;
+                        this._cloudCharge.set(cloud, prevZero * 0.94);
+                        continue;
+                    }
+                    const delta = this.computeChargeGeneration(cloud, graupelCount);
+                    const prev = this._cloudCharge.get(cloud) || 0;
+                    const newCharge = prev * 0.95 + delta;
+                    this._cloudCharge.set(cloud, newCharge);
+                    this.applyChargeEffects(cloud);
+                }
+                // small leak to global lightning system
+                let tot = 0;
+                for (const c of this.cloudSystem.clouds) tot += Math.abs(this._cloudCharge.get(c) || 0);
+                if (this.lightningSystem) this.lightningSystem.charge = Math.max(0, Math.min(1200, tot * 2.6));
             }
         }
 
@@ -4997,16 +5882,20 @@
             }
             // promote a raindrop to graupel/hail if conditions allow (supercooled water + ice nuclei)
             promoteToHail(dropIndex, temperature, altitude, cloudTop) {
+                // allow more aggressive promotion when strong deep convection present
                 if (this.hailIndices.length >= this.maxHail) return false;
-                // hail forms at mid-level altitudes (8-18 km) with supercooled water (-15..-5°C)
-                if (altitude < 6 || altitude > cloudTop + 3) return false;
-                if (temperature > -5 || temperature < -30) return false; // optimal supercooled layer
-                if (Math.random() > 0.035) return false; // rare event
+                // hail/graupel most likely in a broad mid-layer; relax altitude bounds slightly for simulation
+                if (altitude < 4 || altitude > cloudTop + 6) return false;
+                // require supercooled temps but widen acceptable range slightly
+                if (temperature > -2 || temperature < -40) return false;
+                // higher base probability when precipitation quality/size is favorable
+                const baseProb = 0.06 + Math.min(0.42, (this.precipSystem.quality[dropIndex] || 0.9) * 0.12) + Math.min(0.35, (this.precipSystem.size[dropIndex] || 0.8) * 0.08);
+                if (Math.random() > baseProb) return false;
+                // tag as graupel/hail seed
                 this.hailIndices.push(dropIndex);
-                // graupel starts small
-                this.precipSystem.size[dropIndex] = Math.max(0.8, this.precipSystem.size[dropIndex] * 1.2);
+                this.precipSystem.size[dropIndex] = Math.max(0.9, this.precipSystem.size[dropIndex] * (1.2 + Math.random() * 0.6));
                 this.precipSystem.type[dropIndex] = 'graupel';
-                this.precipSystem.quality[dropIndex] = 0.85; // denser/more icy
+                this.precipSystem.quality[dropIndex] = Math.max(0.9, (this.precipSystem.quality[dropIndex] || 1.0) * (1 + Math.random() * 0.45));
                 return true;
             }
             // grow hail through collision with supercooled droplets
@@ -5029,15 +5918,65 @@
                     const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
                     if (dist < hsize * 0.4 + this.precipSystem.size[j] * 0.2) {
                         // collision: accrete small amount
-                        const accretionMass = this.precipSystem.size[j] * 0.08;
+                        const accretionMass = this.precipSystem.size[j] * 0.08 * (1 + (Math.abs(temp) / 25));
                         this.precipSystem.size[hailIdx] += accretionMass;
-                        this.precipSystem.size[j] *= 0.92; // victim shrinks
+                        this.precipSystem.size[j] *= 0.88;
                         // increase density slightly
-                        this.precipSystem.quality[hailIdx] = Math.min(2.0, this.precipSystem.quality[hailIdx] + 0.15);
+                        this.precipSystem.quality[hailIdx] = Math.min(2.0, (this.precipSystem.quality[hailIdx] || 1.0) + 0.12);
                         // if hail is very large, it may evolve to true hail (denser)
-                        if (this.precipSystem.size[hailIdx] > 2.8) {
-                            this.precipSystem.type[hailIdx] = 'hail';
-                            this.precipSystem.quality[hailIdx] = 1.6; // very dense
+                        if (this.precipSystem.size[hailIdx] > 2.8) this.precipSystem.type[hailIdx] = 'hail';
+                    }
+                }
+
+                // If hail becomes large while falling into populated areas, apply building damage and ground impacts
+                if (this.precipSystem.type[hailIdx] === 'hail' && this.precipSystem.pos[hailIdx*3+1] < 6) {
+                    const impactX = this.precipSystem.pos[hailIdx*3];
+                    const impactZ = this.precipSystem.pos[hailIdx*3+2];
+                    const impactRadius = Math.min(18, 3 + this.precipSystem.size[hailIdx] * 2.6);
+                    // spawn visual debris / small craters (lightweight)
+                    try {
+                        if (AppState.scene) {
+                            const cnt = Math.min(40, 12 + Math.floor(this.precipSystem.size[hailIdx] * 8));
+                            const g = new THREE.BufferGeometry();
+                            const arr = new Float32Array(cnt * 3);
+                            for (let i = 0; i < cnt; i++) {
+                                arr[i*3] = impactX + (Math.random()-0.5) * impactRadius * 1.2;
+                                arr[i*3+1] = 0.6 + Math.random() * 1.2;
+                                arr[i*3+2] = impactZ + (Math.random()-0.5) * impactRadius * 1.2;
+                            }
+                            g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+                            const mat = new THREE.PointsMaterial({ size: 0.18 + Math.random()*0.32, color: 0x9fb0c8, transparent:true, opacity:0.9, depthWrite:false, blending: THREE.NormalBlending });
+                            const p = new THREE.Points(g, mat);
+                            p.userData = { life: 0.28 + Math.random()*0.4 };
+                            AppState.scene.add(p);
+                            (this._impactPool = this._impactPool || []).push(p);
+                        }
+                    } catch(e){}
+
+                    // damage urban buildings in radius
+                    if (AppState.urbanSystem && AppState.urbanSystem.cities) {
+                        for (const city of AppState.urbanSystem.cities) {
+                            for (let bi = city.buildings.length - 1; bi >= 0; bi--) {
+                                const bmesh = city.buildings[bi];
+                                if (!bmesh) continue;
+                                const bx = bmesh.position.x + city.x;
+                                const bz = bmesh.position.z + city.z;
+                                const d = Math.hypot(bx - impactX, bz - impactZ);
+                                if (d < impactRadius * 1.2 && Math.random() < Math.min(0.6, 0.24 + (this.precipSystem.size[hailIdx] - 2.8) * 0.14)) {
+                                    try {
+                                        // smash windows (darken and reduce emissive), dent roof (scale)
+                                        if (bmesh.material) {
+                                            bmesh.material.color.lerp(new THREE.Color(0x4a4040), 0.35);
+                                            if (bmesh.material.emissive) bmesh.material.emissive.lerp(new THREE.Color(0x000000), 0.5);
+                                        }
+                                        bmesh.scale.y *= 0.96;
+                                        if (Math.random() < 0.06) {
+                                            city.group.remove(bmesh);
+                                            city.buildings.splice(bi,1);
+                                        }
+                                    } catch(err){}
+                                }
+                            }
                         }
                     }
                 }
@@ -5061,52 +6000,6 @@
                             this.hailIndices.splice(i, 1);
                         }
                     }
-                }
-            }
-        }
-
-        // ENHANCED ELECTROSTATIC CHARGING with feedback to cloud properties
-        class ElectrostaticSystem {
-            constructor(cloudSystemRef, lightningSystemRef, atmosphereRef) {
-                this.cloudSystem = cloudSystemRef;
-                this.lightningSystem = lightningSystemRef;
-                this.atmosphere = atmosphereRef;
-                // ensure the same WeakMap name is used everywhere (_cloudCharge) to avoid undefined access
-                this._cloudCharge = new WeakMap();
-                // keep legacy alias for any older code references
-                this.cloudCharges = this._cloudCharge;
-                this.chargeHistory = []; // track recent charge events
-            }
-            // Triboelectric charging: graupel/hail + ice crystal interactions
-            computeChargeGeneration(cloud, graupelCount) {
-                if (!cloud || cloud.stage !== 'cumulonimbus' && cloud.stage !== 'supercell') return 0;
-                const baseChargeRate = cloud.mass * (cloud.condensationLevel || 0.3) * 0.05;
-                // graupel collisions enhance charge separation significantly
-                const graupelBoost = Math.min(1.8, graupelCount * 0.0008);
-                const total = baseChargeRate * (1 + graupelBoost);
-                return total;
-            }
-            // Electrostatic feedback: strong charge fields enhance updraft and ice formation
-            applyChargeEffects(cloud) {
-                if (!cloud) return;
-                const charge = Math.abs(this._cloudCharge.get(cloud) || 0);
-                // strong electric field amplifies vertical motion slightly
-                const chargeInfluence = Math.min(0.4, charge / 120);
-                cloud.buoyancy = (cloud.buoyancy || 0.5) * (1 + chargeInfluence * 0.15);
-                // promote ice formation in strongly-charged regions
-                if (charge > 80 && Math.random() < 0.02) {
-                    cloud.condensationLevel = Math.min(1.0, (cloud.condensationLevel || 0.5) + 0.08);
-                }
-            }
-            update(t, precipSystem, graupelCount) {
-                for (const cloud of this.cloudSystem.clouds || []) {
-                    if (!cloud) continue;
-                    const charge = this.computeChargeGeneration(cloud, graupelCount);
-                    const prev = this._cloudCharge.get(cloud) || 0;
-                    const newCharge = prev * 0.97 + charge;
-                    this._cloudCharge.set(cloud, newCharge);
-                    // apply electrostatic feedback
-                    this.applyChargeEffects(cloud);
                 }
             }
         }
@@ -5617,6 +6510,44 @@
             AppState.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             AppState.renderer.shadowMap.enabled = true;
             document.getElementById('canvas-container').appendChild(AppState.renderer.domElement);
+            
+            // NEW: rain dog sprite attached to camera (visual raindrop overlay whose opacity depends on precipitation intensity)
+            (function createRainDog() {
+                const size = 256;
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                // draw soft circular streak / droplet vignette
+                const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+                g.addColorStop(0, 'rgba(255,255,255,0.9)');
+                g.addColorStop(0.35, 'rgba(210,230,245,0.55)');
+                g.addColorStop(0.68, 'rgba(120,170,210,0.18)');
+                g.addColorStop(1, 'rgba(90,140,190,0.0)');
+                ctx.fillStyle = g;
+                ctx.fillRect(0,0,size,size);
+                // subtle vertical streak to suggest water smear
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                for (let i=0;i<8;i++){
+                    ctx.fillRect(size*0.44 + (i-4)*1.6, size*0.08, size*0.06, size*0.84);
+                }
+                const tex = new THREE.CanvasTexture(canvas);
+                const mat = new THREE.SpriteMaterial({
+                    map: tex,
+                    transparent: true,
+                    opacity: 0.0,
+                    depthWrite: false,
+                    blending: THREE.NormalBlending
+                });
+                const sprite = new THREE.Sprite(mat);
+                sprite.scale.set(3.0, 3.0, 1.0); // reasonable size in view-space
+                // attach to camera so it always stays in screen-space
+                try {
+                    AppState.camera.add(sprite);
+                    sprite.position.set(0.0, -0.6, -1.25); // slightly lower center in view
+                } catch(e) {}
+                AppState.rainDog = sprite;
+            })();
 
             const ambient = new THREE.AmbientLight(0x808fa0, 1.2);
             AppState.scene.add(ambient);
@@ -5812,7 +6743,10 @@
             
             // NEW: Initialize layered updraft system
             AppState.layeredUpdraftSystem = new LayeredUpdraftSystem(AppState.cloudSystem);
-            
+
+            // NEW: Birds
+            AppState.birds = new Birds(34);
+
             setupControls();
             // detect CPU & GPU and display
             (function detectHardware() {
@@ -5839,13 +6773,41 @@
                     console.warn('Hardware detect failed', e);
                 }
             })();
+
+            // Prevent UI panels (especially the top-left stats) from forwarding pointer events to the canvas,
+            // so touching/dragging UI won't rotate/move the camera.
+            (function blockUIPointerPropagation() {
+                try {
+                    // specifically guard the stats panel and other ui panels
+                    const blockIds = ['stats', 'controls', 'graphics', 'info'];
+                    blockIds.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (!el) return;
+                        // ensure the panel consumes pointer interactions and doesn't let them bubble to canvas
+                        el.style.touchAction = 'manipulation';
+                        el.style.pointerEvents = 'auto';
+                        ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mousemove', 'mouseup', 'touchstart', 'touchmove', 'touchend'].forEach(evt => {
+                            el.addEventListener(evt, (e) => {
+                                e.stopPropagation();
+                            }, { passive: false });
+                        });
+                    });
+                } catch (e) {
+                    console.warn('blockUIPointerPropagation failed', e);
+                }
+            })();
         }
 
         let frames = 0;
         let lastFps = performance.now();
 
-        function animate() {
-            requestAnimationFrame(animate);
+        // animate wrapper: the function used both by RAF and renderer.setAnimationLoop - ensure it schedules next RAF only when vsync is false
+        // modify animate to accept a timestamp arg and avoid scheduling requestAnimationFrame when setAnimationLoop is active
+        function animate(ts) {
+            // if using RAF driver, store raf id for potential cancellation
+            if (!Graphics.vsync) {
+                AppState._rafId = requestAnimationFrame(animate);
+            }
             const t = performance.now();
 
             // compute delta time robustly to avoid TDZ / "Cannot access 'deltaMs' before initialization"
@@ -5857,9 +6819,52 @@
             } else {
                 deltaMs = t - AppState._lastTime;
             }
+            // apply simulation speed multiplier from UI
+            deltaMs *= (Number(Graphics.simSpeed) || 1.0);
             const dt = (deltaMs / 1000) || 0;
             AppState._lastTime = t;
 
+            // Performance: update smoothed FPS and warn if low
+            try {
+                const fpsInstant = deltaMs > 0 ? (1000 / deltaMs) : 60;
+                // initialize smoothing
+                if (typeof AppState._smoothedFPS === 'undefined') AppState._smoothedFPS = fpsInstant;
+                // exponential smoothing
+                AppState._smoothedFPS = AppState._smoothedFPS * 0.92 + fpsInstant * 0.08;
+                // warn if smoothed FPS falls below threshold for sustained period
+                const fpsThreshold = 30;
+                if (AppState._smoothedFPS < fpsThreshold) {
+                    // only show once until recovery
+                    if (!AppState._fpsWarnShown) {
+                        AppState._fpsWarnShown = true;
+                        showPerfWarning('Performance: frame rate dropped below 30 FPS — consider lowering graphics settings.', 'fps-warning', 5000);
+                    } else {
+                        // ensure the overlay persists while poor
+                        showPerfWarning('Performance: frame rate below 30 FPS — consider lowering graphics settings.', 'fps-warning', 0);
+                    }
+                } else {
+                    if (AppState._fpsWarnShown) {
+                        AppState._fpsWarnShown = false;
+                        // remove fps warning overlay when recovered
+                        hidePerfWarning();
+                    }
+                }
+                // write an approximate FPS into UI (smoothed)
+                if (document.getElementById('fps')) {
+                    document.getElementById('fps').textContent = Math.max(0, Math.round(AppState._smoothedFPS));
+                }
+            } catch (e) { console.warn('FPS smoothing failed', e); }
+
+            // performance warning: if ray tracing requested on weak device, show warning overlay once
+            try {
+                if (Graphics.rayTracing && !Graphics.performanceWarningSeen) {
+                    const cores = navigator.hardwareConcurrency || 1;
+                    if (cores < 4 || (window.devicePixelRatio || 1) < 1.1) {
+                        Graphics.performanceWarningSeen = true;
+                        showPerfWarning('Warning: Ray Tracing enabled on a low-power device — performance may be poor. Toggle Ray Tracing off in Graphics.', 'raytrace-hw-warning', 5000);
+                    }
+                }
+            } catch(e){}
             if (AppState.paused) {
                 // Still render the current scene so camera can be moved while paused
                 AppState.renderer.render(AppState.scene, AppState.camera);
@@ -5955,6 +6960,9 @@
             try { if (AppState.waterSurface && typeof AppState.waterSurface.update === 'function') AppState.waterSurface.update(deltaMs); } catch (e) { console.warn('WaterSurface.update error:', e); }
             try { if (AppState.treeSystem && typeof AppState.treeSystem.update === 'function') AppState.treeSystem.update(deltaMs); } catch (e) { console.warn('TreeSystem.update error:', e); }
 
+            // birds update (lightweight)
+            try { if (AppState.birds && typeof AppState.birds.update === 'function') AppState.birds.update(Math.max(0.001, deltaMs / 16.6)); } catch(e){}
+
             try { if (AppState.evaporationSystem && typeof AppState.evaporationSystem.update === 'function') AppState.evaporationSystem.update(); } catch (e) { console.warn('EvaporationSystem.update error:', e); }
             try { if (AppState.cloudSystem && typeof AppState.cloudSystem.update === 'function') AppState.cloudSystem.update(t); } catch (e) { console.warn('CloudGrowth.update error:', e); }
             // apply diurnal infrared/temperature update (DayNight)
@@ -5973,6 +6981,19 @@
                 console.warn('Precipitation.update error:', e);
                 activePart = 0;
             }
+
+            // NEW: update rain dog opacity (opacity scales with precipitation intensity, max 0.9)
+            try {
+                if (AppState.rainDog && AppState.rainDog.material) {
+                    const maxDrops = (AppState.rainSystem && AppState.rainSystem.max) ? AppState.rainSystem.max : 2500;
+                    // compute normalized intensity (0..1) and apply rain intensity global multiplier
+                    let intensityNorm = Math.min(1, (activePart / Math.max(1, maxDrops)) * (Graphics.rainIntensity || 1));
+                    // soften response and cap at 0.9
+                    const opacity = Math.min(0.9, intensityNorm * 0.9);
+                    AppState.rainDog.material.opacity = opacity;
+                    AppState.rainDog.visible = opacity > 0.01;
+                }
+            } catch(e) { console.warn('RainDog update failed', e); }
 
             try { if (AppState.lightningSystem && typeof AppState.lightningSystem.update === 'function') AppState.lightningSystem.update(t); } catch (e) { console.warn('Lightning.update error:', e); }
             try { if (AppState.rainbowSystem && typeof AppState.rainbowSystem.update === 'function') AppState.rainbowSystem.update(t); } catch (e) { console.warn('RainbowSystem.update error:', e); }
@@ -6003,6 +7024,7 @@
 
             // update sun effects (glare & godrays) per-frame
             try { if (AppState._updateSunEffects) AppState._updateSunEffects(); } catch (e) { console.warn('SunEffects update error:', e); }
+            try { applySunScattering(); } catch(e){}
 
             // Apply first-person movement based on joystick / forward button inputs
             if (AppState.firstPerson) {
@@ -6087,7 +7109,9 @@
                 document.getElementById('frame-time').textContent = (1000 / (frames || 1)).toFixed(1);
                 document.getElementById('particles').textContent = activePart;
                 document.getElementById('clouds').textContent = AppState.cloudSystem && AppState.cloudSystem.clouds ? AppState.cloudSystem.clouds.length : 0;
-                document.getElementById('charge').textContent = AppState.lightningSystem ? Math.floor(AppState.lightningSystem.charge || 0) : 0;
+                // display lightning charge as a percentage relative to the Lightning.threshold (if available)
+                const chargeDisplay = AppState.lightningSystem ? (typeof AppState.lightningSystem.chargePercent === 'number' ? Math.floor(AppState.lightningSystem.chargePercent) : Math.floor(AppState.lightningSystem.charge || 0)) : 0;
+                document.getElementById('charge').textContent = chargeDisplay;
                 document.getElementById('strikes').textContent = AppState.lightningSystem ? (AppState.lightningSystem.count || 0) : 0;
                 document.getElementById('wind').textContent = windSpeed.toFixed(1);
                 
@@ -6139,14 +7163,26 @@
                     AppState.rainSystem.rainshaftGroup.visible = !!Graphics.rainshafts;
                 }
             }
+            // render distance affects cloud spawning and camera far plane
+            Graphics.renderDistance = Math.max(60, Math.min(1000, Number(Graphics.renderDistance || 260)));
+            if (AppState.camera) {
+                AppState.camera.far = Math.max(120, Graphics.renderDistance * 4); // keep far clipping sufficiently beyond renderDistance
+                AppState.camera.updateProjectionMatrix && AppState.camera.updateProjectionMatrix();
+            }
             // lightning
             if (AppState.lightningSystem) AppState.lightningSystem.enabled = !!Graphics.lightning;
             // rainbow
             if (AppState.rainbowSystem) AppState.rainbowSystem.enabled = !!Graphics.rainbow;
+            // radar overlay visibility
+            if (AppState.radarOverlay) AppState.radarOverlay.enabled = !!Graphics.radar;
             // velocity arrows toggle
             if (AppState.velocityArrows) {
                 AppState.velocityArrows.enabled = !!Graphics.windVectors;
                 AppState.velocityArrows.group.visible = !!Graphics.windVectors;
+            }
+            // rain fog visibility control: fade/hide group when disabled
+            if (AppState.rainFog) {
+                AppState.rainFog.group.visible = !!Graphics.rainFog;
             }
             // cloud detail - control max clouds
             if (AppState.cloudSystem) {
@@ -6175,6 +7211,26 @@
                     }
                 }
             }
+            // VSync handling: if vsync on use renderer.setAnimationLoop to sync to display; otherwise use requestAnimationFrame loop
+            try {
+                if (Graphics.vsync) {
+                    // prefer WebGLRenderer.setAnimationLoop for vsync-stepped rendering
+                    if (AppState.renderer && typeof AppState.renderer.setAnimationLoop === 'function') {
+                        AppState.renderer.setAnimationLoop(animate);
+                        // cancel any RAF we've created
+                        if (AppState._rafId) { cancelAnimationFrame(AppState._rafId); AppState._rafId = null; }
+                    }
+                } else {
+                    // turn off setAnimationLoop to allow custom RAF driven loop
+                    if (AppState.renderer && typeof AppState.renderer.setAnimationLoop === 'function') {
+                        AppState.renderer.setAnimationLoop(null);
+                    }
+                    // ensure our RAF-driven loop is running
+                    if (!AppState._rafId) {
+                        AppState._rafId = requestAnimationFrame(animate);
+                    }
+                }
+            } catch (e) { console.warn('VSync apply failed', e); }
             // ensure cloud system is aware of render mode and volumetric toggles
             if (AppState.cloudSystem) {
                 AppState.cloudSystem.renderMode = Graphics.cloudRenderMode;
@@ -6212,13 +7268,88 @@
                 AppState.renderer.setPixelRatio(pr);
                 AppState.renderer.setSize(window.innerWidth, window.innerHeight);
             }
+            // Ray tracing toggle: if enabled attempt lightweight path-like settings (real ray tracing requires WebGL2 + special libs)
+            try {
+                if (Graphics.rayTracing) {
+                    // non-invasive approximation: increase exposure, enable ToneMapping to emulate stronger light interaction
+                    AppState.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                    AppState.renderer.toneMappingExposure = 1.1;
+                    // approximate "better" shadows by using PCF soft shadows and increase shadow map resolution
+                    try {
+                        AppState.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                        AppState.scene.traverse(obj => {
+                            if (obj.isDirectionalLight && obj.shadow && obj.shadow.mapSize) {
+                                obj.shadow.mapSize.width = obj.shadow.mapSize.height = 2048;
+                            }
+                        });
+                    } catch(e) {}
+                    // immediate user-visible warning about heavy shader/settings
+                    if (!AppState._rayWarnShown) {
+                        AppState._rayWarnShown = true;
+                        showPerfWarning('Heavy graphics enabled: Ray Tracing approximations may reduce frame rate. Consider disabling for better performance.', 'raytrace-toggle-warning', 6000);
+                    } else {
+                        // keep lightweight persistent message for a short time
+                        showPerfWarning('Heavy graphics enabled: Ray Tracing approximations may reduce frame rate.', 'raytrace-toggle-warning', 3000);
+                    }
+                } else {
+                    AppState.renderer.toneMapping = THREE.ReinhardToneMapping;
+                    AppState.renderer.toneMappingExposure = 1.0;
+                    try {
+                        AppState.renderer.shadowMap.type = THREE.PCFShadowMap;
+                        AppState.scene.traverse(obj => {
+                            if (obj.isDirectionalLight && obj.shadow && obj.shadow.mapSize) {
+                                obj.shadow.mapSize.width = obj.shadow.mapSize.height = 1024;
+                            }
+                        });
+                    } catch(e) {}
+                    // hide ray warning if present
+                    AppState._rayWarnShown = false;
+                    try { const el = document.getElementById('raytrace-toggle-warning'); if (el) el.style.display = 'none'; } catch(e){}
+                }
+            } catch(e){}
+            // greenhouse slider effect: store value and DayNight will use Graphics.greenhouse in its update
+            // pixel ratio already applied above
         }
 
         init();
-        animate();
+        // create radar overlay & emitters after init
+        AppState.radarOverlay = new RadarOverlay();
+        AppState.emitters = [];
+        // spawn an industrial park and a volcano
+        AppState.emitters.push(new SourceEmitter('factory', -90, 60));
+        AppState.emitters.push(new SourceEmitter('factory', 140, -10));
+        AppState.emitters.push(new SourceEmitter('volcano', 40, -160));
+
+        // NEW: RainFog instance
+        AppState.rainFog = new RainFog();
+
+        // start the render loop according to current VSync setting
+        if (Graphics.vsync && AppState.renderer && typeof AppState.renderer.setAnimationLoop === 'function') {
+            AppState.renderer.setAnimationLoop(animate);
+        } else {
+            AppState._rafId = requestAnimationFrame(animate);
+        }
 
         // wire graphics UI controls to Graphics object and apply settings
         (function setupGraphicsUI() {
+            // Insert Simulation Speed slider
+            const simRow = document.createElement('div');
+            simRow.className = 'gfx-row';
+            simRow.style.marginTop = '6px';
+            const simLabel = document.createElement('label');
+            simLabel.className = 'gfx-label';
+            simLabel.textContent = 'Sim ×';
+            const simRange = document.createElement('input');
+            simRange.type = 'range';
+            simRange.min = 0.1; simRange.max = 4.0; simRange.step = 0.05; simRange.value = Graphics.simSpeed || 1.0;
+            simRow.appendChild(simLabel);
+            simRow.appendChild(simRange);
+            const gfxPanel = document.getElementById('graphics');
+            if (gfxPanel) gfxPanel.appendChild(simRow);
+            simRange.addEventListener('input', () => {
+                Graphics.simSpeed = Number(simRange.value);
+            });
+
             const irRange = document.getElementById('ir-range');
             const shadowToggle = document.getElementById('shadow-toggle');
             const lightningToggle = document.getElementById('lightning-toggle');
@@ -6381,7 +7512,6 @@
             windRange.min = 0.1; windRange.max = 3.0; windRange.step = 0.05; windRange.value = Graphics.windMultiplier;
             windRow.appendChild(windLabel);
             windRow.appendChild(windRange);
-            const gfxPanel = document.getElementById('graphics');
             if (gfxPanel) gfxPanel.appendChild(windRow);
             windRange.addEventListener('input', () => {
                 Graphics.windMultiplier = Number(windRange.value);
@@ -6413,7 +7543,115 @@
             // initialize wind vectors flag
             Graphics.windVectors = Graphics.windVectors || false;
 
+            // Insert Ray Tracing toggle
+            const rtRow = document.createElement('div');
+            rtRow.className = 'gfx-row';
+            rtRow.style.marginTop = '6px';
+            const rtLabel = document.createElement('label'); rtLabel.className = 'gfx-label'; rtLabel.textContent = 'Ray Tracing (heavy)';
+            const rtChk = document.createElement('input'); rtChk.type = 'checkbox'; rtChk.id = 'raytrace-toggle'; rtChk.checked = Graphics.rayTracing;
+            rtRow.appendChild(rtLabel); rtRow.appendChild(rtChk);
+            if (gfxPanel) gfxPanel.appendChild(rtRow);
+            rtChk.addEventListener('change', (e) => {
+                Graphics.rayTracing = !!e.target.checked;
+                // performance warning handled in animate first use
+                applyGraphicsSettings();
+            });
+
+            // Insert Greenhouse slider
+            const ghRow = document.createElement('div');
+            ghRow.className = 'gfx-row';
+            ghRow.style.marginTop = '6px';
+            const ghLabel = document.createElement('label'); ghLabel.className = 'gfx-label'; ghLabel.textContent = 'Greenhouse °C';
+            const ghRange = document.createElement('input'); ghRange.type = 'range'; ghRange.min = 0.0; ghRange.max = 6.0; ghRange.step = 0.1; ghRange.value = Graphics.greenhouse || 0.0;
+            ghRow.appendChild(ghLabel); ghRow.appendChild(ghRange);
+            if (gfxPanel) gfxPanel.appendChild(ghRow);
+            ghRange.addEventListener('input', () => {
+                Graphics.greenhouse = Number(ghRange.value);
+                // DayNight.update will use Graphics.greenhouse
+            });
+
+            // Insert Charge Multiplier slider
+            const chRow = document.createElement('div');
+            chRow.className = 'gfx-row';
+            chRow.style.marginTop = '6px';
+            const chLabel = document.createElement('label'); chLabel.className = 'gfx-label'; chLabel.textContent = 'Charge ×';
+            const chRange = document.createElement('input'); chRange.type = 'range'; chRange.min = 0.2; chRange.max = 4.0; chRange.step = 0.05; chRange.value = Graphics.chargeMultiplier || 1.0;
+            chRow.appendChild(chLabel); chRow.appendChild(chRange);
+            if (gfxPanel) gfxPanel.appendChild(chRow);
+            chRange.addEventListener('input', () => {
+                Graphics.chargeMultiplier = Number(chRange.value);
+            });
+            // show initial charge multiplier label (optional tiny indicator)
+            Graphics.chargeMultiplier = Number(chRange.value || 1.0);
+
+            // initialize raytrace and greenhouse UI state
+            Graphics.rayTracing = !!(document.getElementById('raytrace-toggle') && document.getElementById('raytrace-toggle').checked);
+            Graphics.greenhouse = Number(ghRange.value || 0.0);
+            // ensure UI-driven chargeMultiplier is loaded
+            Graphics.chargeMultiplier = Number(window.Graphics && window.Graphics.chargeMultiplier ? window.Graphics.chargeMultiplier : (chRange && chRange.value ? chRange.value : 1.0));
+
+            // insert radar toggle
+            const radRow = document.createElement('div');
+            radRow.className = 'gfx-row';
+            radRow.style.marginTop = '6px';
+            const radLabel = document.createElement('label'); radLabel.className = 'gfx-label'; radLabel.textContent = 'Radar';
+            const radChk = document.createElement('input'); radChk.type = 'checkbox'; radChk.id = 'radar-toggle'; radChk.checked = true;
+            radRow.appendChild(radLabel); radRow.appendChild(radChk);
+            if (gfxPanel) gfxPanel.appendChild(radRow);
+            radChk.addEventListener('change', (e)=>{ Graphics.radar = !!e.target.checked; if (AppState.radarOverlay) AppState.radarOverlay.enabled = Graphics.radar; });
+            Graphics.radar = !!document.getElementById('radar-toggle') && document.getElementById('radar-toggle').checked;
+
+            // Insert Rain Fog toggle
+            const fogRow = document.createElement('div');
+            fogRow.className = 'gfx-row';
+            fogRow.style.marginTop = '6px';
+            const fogLabel = document.createElement('label'); fogLabel.className = 'gfx-label'; fogLabel.textContent = 'Rain Fog';
+            const fogChk = document.createElement('input'); fogChk.type = 'checkbox'; fogChk.id = 'rainfog-toggle'; fogChk.checked = !!Graphics.rainFog;
+            fogRow.appendChild(fogLabel); fogRow.appendChild(fogChk);
+            if (gfxPanel) gfxPanel.appendChild(fogRow);
+            fogChk.addEventListener('change', (e)=>{ Graphics.rainFog = !!e.target.checked; if (AppState.rainFog) AppState.rainFog.group.visible = Graphics.rainFog; });
+            Graphics.rainFog = !!(document.getElementById('rainfog-toggle') && document.getElementById('rainfog-toggle').checked);
+
             applyGraphicsSettings();
+
+            // ---------- Render Distance slider ----------
+            const rdRow = document.createElement('div');
+            rdRow.className = 'gfx-row';
+            rdRow.style.marginTop = '6px';
+            const rdLabel = document.createElement('label');
+            rdLabel.className = 'gfx-label';
+            rdLabel.textContent = 'Render Dist.';
+            const rdRange = document.createElement('input');
+            rdRange.type = 'range';
+            rdRange.min = 60; rdRange.max = 1000; rdRange.step = 10; rdRange.value = Graphics.renderDistance || 260;
+            rdRow.appendChild(rdLabel);
+            rdRow.appendChild(rdRange);
+            if (gfxPanel) gfxPanel.appendChild(rdRow);
+            rdRange.addEventListener('input', () => {
+                Graphics.renderDistance = Number(rdRange.value);
+                applyGraphicsSettings();
+            });
+
+            // ---------- V-Sync toggle ----------
+            const vsRow = document.createElement('div');
+            vsRow.className = 'gfx-row';
+            vsRow.style.marginTop = '6px';
+            const vsLabel = document.createElement('label');
+            vsLabel.className = 'gfx-label';
+            vsLabel.textContent = 'V-Sync';
+            const vsChk = document.createElement('input');
+            vsChk.type = 'checkbox';
+            vsChk.id = 'vsync-toggle';
+            vsChk.checked = !!Graphics.vsync;
+            vsRow.appendChild(vsLabel);
+            vsRow.appendChild(vsChk);
+            if (gfxPanel) gfxPanel.appendChild(vsRow);
+            vsChk.addEventListener('change', (e) => {
+                Graphics.vsync = !!e.target.checked;
+                applyGraphicsSettings();
+            });
+            // initialize UI state
+            if (document.getElementById('vsync-toggle')) Graphics.vsync = document.getElementById('vsync-toggle').checked;
         })();
 
         // Mobile joystick using nipplejs (esm.sh) - left = movement, right = look
